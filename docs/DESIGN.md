@@ -1,6 +1,6 @@
 # flamin Design
 
-**Status:** Draft for review (Stage 2: P-01 to P-14 approved as D-12 to D-25; live probe results added, P-15 to P-18 approved as D-26 to D-29) | **Kit version:** v1 | **Date:** 2026-09-24 | This is the design the Stage 3 build follows.
+**Status:** Approved on 2026-09-24 (decisions D-01 to D-37) | **Kit version:** v1 | **Date:** 2026-09-24 | This is the design the Stage 3 build follows.
 
 ---
 
@@ -23,6 +23,8 @@ Words used often:
 - **Engine**: the small Python program that owns all state and all checks.
 - **Adapter**: the thin layer that turns engine features into native features of one AI tool (Claude Code, Codex or Cursor).
 - **Tool**: one of the three AI coding tools. A session always uses one tool.
+
+**The three guides in `docs/`.** `Collaborative Workflow.md`, `Generated Code Architecture Summary.md` and `Tips and Tricks.md` are read-only background. They describe another platform. Their features (for example session rollback by double-click, file mentions, a workbench, a design page) are not flamin features. Where a guide conflicts with this document, this document wins. Section 19 shows how their useful lessons work in flamin.
 
 ---
 
@@ -48,6 +50,8 @@ The design has three big ideas:
 ├── flamin.cmd             # Windows launcher, one line
 ├── kit/                   # everything that is the same for every product
 │   ├── VERSION            # kit version, e.g. "v1"
+│   ├── MANIFEST           # hash of every kit file (P-19)
+│   ├── rules/             # core.md, the one source for CLAUDE.md and AGENTS.md (P-13)
 │   ├── engine/            # the flamin engine (Python 3 standard library only)
 │   ├── agents/            # eight agent definitions, tool-neutral format
 │   ├── adapters/
@@ -57,7 +61,7 @@ The design has three big ideas:
 │   ├── stacks/<profile>/  # shipped stack profiles (read only master copies)
 │   ├── githooks/          # pre-commit templates, rendered per machine into .git/hooks/
 │   └── ci/                # sample CI workflow
-├── docs/                  # this design, README, WORKFLOW, VERIFICATION, BUILD_LOG
+├── docs/                  # this design, the three read-only guides (§0), README, WORKFLOW, VERIFICATION, BUILD_LOG
 ├── .flamin/               # product state, created by `flamin init`, never in the master kit
 └── <product code>         # layout comes from the chosen stack profile(s)
 ```
@@ -86,6 +90,7 @@ Trade-off: a teammate who clones the product has no hooks until `flamin init` ru
 ├── modules.json       # module -> contract map
 ├── stack.json         # chosen stack profile or profiles
 ├── models.json        # tier -> model per tool
+├── approvals.json     # open requests, answers, approved hashes, assumption status (P-20)
 ├── stacks/<profile>/  # the product's own copy of each approved profile
 ├── business/          # overview, glossary, actors, journeys, rules, states
 ├── analysis/<slug>/   # requirements.md, plan.md
@@ -97,7 +102,7 @@ Trade-off: a teammate who clones the product has no hooks until `flamin init` ru
 └── versions/          # v1.md, v2.md, ...
 ```
 
-Shipped profiles live in `kit/stacks/`. When the Architect's stack choice is approved, the engine copies the chosen profile into `.flamin/stacks/<profile>/`. The product then owns its copy and can tune it without touching the kit. (P-01.)
+Shipped profiles live in `kit/stacks/`. When the Architect's stack choice is approved, the engine copies the chosen profile into `.flamin/stacks/<profile>/`. The product then owns its copy and can tune it without touching the kit. (P-01.) A change to the product's copy goes through the same gate as a new stack profile (P-19).
 
 ### 2.3 Master kit and product projects
 
@@ -162,7 +167,7 @@ The kit uses the same version scheme as products (v1, v2, ...). `kit/VERSION` ho
 
 ### 3.1 Kit runtime choice
 
-**Python 3 standard library, version 3.11 or newer (P-03).** Python 3.11 is the oldest release that still gets security fixes for a useful time (security-only phase, end of life scheduled for October 2027) and the first with `tomllib` in the standard library, which lets specs be TOML (§14.1). Older floors buy nothing: 3.8 ended on 2024-10-07, 3.9 on 2025-10-31, and 3.10 ends in October 2026. Versions in the security-only phase get no new binary installers, so a fresh install today is normally 3.13 or 3.14; the floor only decides which older machines are still accepted. Verified trade-offs: Ubuntu 22.04 LTS ships `python3` 3.10.6 by default, and the `/usr/bin/python3` that macOS provides through Xcode or the Command Line Tools is, per the Python macOS guide, usually older and incomplete. On those machines `flamin doctor` tells the human to install a current Python. The engine entry file checks the version first, using syntax that even old Python can read, so a too-old Python gets a clear message instead of a crash. `flamin doctor` also warns when the running Python has passed its end of life. Python is one installer away on every OS. The standard library already has everything the engine needs: JSON, regex, file locking by exclusive create, atomic rename (`os.replace`), hashing, `string.Template` for generation, `argparse`, and `unittest`. No third-party packages means no internet and no dependency drift. The same code runs on all three operating systems. Node or Go would need either an extra install or a compiled binary per platform.
+**Python 3 standard library, version 3.11 or newer (P-03).** Python 3.11 is the oldest release that still gets security fixes for a useful time (security-only phase, end of life scheduled for October 2027) and the first with `tomllib` in the standard library, which lets specs be TOML (§14.1). Older floors buy nothing: 3.8 ended on 2024-10-07, 3.9 on 2025-10-31, and 3.10 ends in October 2026. Versions in the security-only phase get no new binary installers, so a fresh install today is normally 3.13 or 3.14; the floor only decides which older machines are still accepted. Verified trade-offs: Ubuntu 22.04 LTS ships `python3` 3.10.6 by default on amd64 (3.10.4 on arm64 and other ports), and the `/usr/bin/python3` that macOS provides through Xcode or the Command Line Tools is, per the Python macOS guide, usually older and incomplete. On those machines `flamin doctor` tells the human to install a current Python. The engine entry file checks the version first, using syntax that even old Python can read, so a too-old Python gets a clear message instead of a crash. `flamin doctor` also warns when the running Python has passed its end of life. Python is one installer away on every OS. The standard library already has everything the engine needs: JSON, regex, file locking by exclusive create, atomic rename (`os.replace`), hashing, `string.Template` for generation, `argparse`, and `unittest`. No third-party packages means no internet and no dependency drift. The same code runs on all three operating systems. Node or Go would need either an extra install or a compiled binary per platform.
 
 The standard library reads TOML but has no YAML reader, so design specs are TOML (§14.1, P-05). The engine only reads specs; agents write them as text. Inside the engine, any need to start Python again uses `sys.executable`, never a hard-coded command name.
 
@@ -214,7 +219,7 @@ All commands are `flamin <verb>`. Per-tool wrappers (Section 4) only call these.
 | `integration-test` | Step 11. Needs every module at `self_test: pass`. |
 | `architecture-review` | Step 12: full boundary and data model scan. |
 | `release` | Step 13: build the release proposal and open the release gate. |
-| `cr-new` | Add a change request to the next version. |
+| `cr-new` | Add a change request to the open version, or to the next one once the open version's CR list is approved (P-22). |
 | `cr-approve` | Approval Gate for the CR list of a version. |
 | `approve` | Answer any open approval request (yes or no). |
 | `audit` | Show the audit log as plain readable lines; `--stats` shows steps per agent per task. |
@@ -236,8 +241,8 @@ Extra commands this design adds:
 
 - **Atomic writes.** Every write to `.flamin/*.json` goes to a temp file in the same folder, is flushed to disk, then renamed over the old file with `os.replace`. A crash leaves either the old file or the new file, never half a file. (Hard.)
 - **One writer at a time.** Every state change first creates `.flamin/.lock` with exclusive create (works on Linux, macOS and Windows). The lock holds the process id, host-free session id and start time. A second writer waits up to 10 seconds, then fails with: "Another flamin command is writing state (session s-81f2, started 12:01:05). Try again, or run `flamin doctor` if it looks stuck." It never overwrites. (Hard.)
-- **Stale locks.** A lock older than 120 seconds whose process is gone is reported by `flamin doctor`. Clearing it needs `flamin doctor --clear-stale-lock`. The engine never steals a lock on its own. (Hard.)
-- **Audit appends** use the same lock (Section 15.2).
+- **Stale locks.** A lock older than 120 seconds whose process is gone is reported by `flamin doctor`. Clearing it needs `flamin doctor --clear-stale-lock`. The engine never steals a lock on its own. (Hard.) Build note: on Windows the "is the process gone" check must not use `os.kill(pid, 0)`, because there signal 0 is `CTRL_C_EVENT` and would interrupt live processes. The build uses a read-only check, for example `OpenProcess` through the standard library `ctypes`.
+- **Audit appends** use the same lock (Section 15.2). If the lock cannot be taken within the wait, the line goes to `.flamin/audit/spill-<session>.jsonl`, and the next successful append merges it. Audit lines are never dropped. (P-26.)
 
 ### 3.5 Idempotency
 
@@ -268,7 +273,7 @@ Adapters translate engine features into each tool's native features. **No busine
 
 ### 4.2 Codex adapter
 
-- `.codex/agents/<agent>.toml`: eight agents with `name`, `description`, `developer_instructions`, `model`, `model_reasoning_effort` and `sandbox_mode` (read-only for Business, Analyst, Architect, Planner).
+- `.codex/agents/<agent>.toml`: the seven worker agents with `name`, `description`, `developer_instructions`, `model`, `model_reasoning_effort` and `sandbox_mode` (read-only for Business, Analyst, Architect, Planner). The Orchestrator runs as the main thread, with its instructions in `AGENTS.md`. The launch gate denies any spawn of an agent named `orchestrator`. The build first checks whether Codex can set a custom agent as the main thread, and uses that if it exists (P-25).
 - `.codex/config.toml`: `[agents] max_depth = 1` and `max_threads = 10`. Hooks inline or in `.codex/hooks.json`:
   - `PreToolUse` on `Bash`, `apply_patch` (matches `Edit|Write`), `collaborationspawn_agent` (spawn) and MCP tools. Matchers are regular expressions that must match the **whole** tool name (probed, §5.4): `Agent` and `spawn_agent` do not match a spawn, and broad patterns such as `.*agent.*` also catch `collaborationwait_agent`. The `apply_patch` matcher is not yet probed.
   - `SubagentStart` (second launch check: carries top-level `agent_type` and `agent_id`).
@@ -285,7 +290,7 @@ Adapters translate engine features into each tool's native features. **No busine
 
 ### 4.3 Cursor adapter
 
-- `.cursor/agents/<agent>.md`: eight agents with `name`, `description`, `model` and `readonly: true` for read-only agents.
+- `.cursor/agents/<agent>.md`: the seven worker agents with `name`, `description`, `model` and `readonly: true` for read-only agents. The Orchestrator runs as the main agent, with its instructions in `AGENTS.md`. `subagentStart` denies any launch of an agent named `orchestrator`, because Cursor lets a sub-agent start one more level (P-25).
 - `.cursor/hooks.json` (version 1):
   - `preToolUse` with **no matcher** (every tool), with `failClosed: true`. The engine acts on `Write`, `Delete`, `Shell`, `Task` and MCP tools, and treats any unrecognised tool that carries a `file_path` as a write: it logs the call and runs the checks it can, never assuming the call is safe (P-15). Reason: the payload is only probed with one model (§5.4), and another model may use an edit tool with a different name.
   - `beforeShellExecution` and `beforeMCPExecution` with `failClosed: true` (these two support "ask").
@@ -300,7 +305,7 @@ Adapters translate engine features into each tool's native features. **No busine
 
 ### 4.4 Universal backstop
 
-A git pre-commit hook, rendered by `flamin init` from `kit/githooks/` into `.git/hooks/pre-commit` for the current OS, runs `flamin check-staged`. It works the same for every tool, and also for a human editing by hand. A sample CI workflow in `kit/ci/` runs the same command on each pull request, on a matrix of Linux, macOS and Windows runners.
+A git pre-commit hook, rendered by `flamin init` from `kit/githooks/` into `.git/hooks/pre-commit` for the current OS, runs `flamin check-staged`. It works the same for every tool, and also for a human editing by hand. A sample CI workflow in `kit/ci/` runs the same checks on each pull request, on a matrix of Linux, macOS and Windows runners. CI has no staged diff, so it calls `flamin check-staged --range <base>..<head>` on the pull request's commits (P-24). Build note: Git for Windows runs hooks through its own bundled shell, so the Windows pre-commit hook is proven by the backstop acceptance test, not assumed.
 
 The backstop is Hard for anything that reaches a commit. It is after the fact within a session: a bad edit can sit on disk until the commit. It can also be skipped with `git commit --no-verify`, which CI then catches.
 
@@ -450,7 +455,7 @@ Strength of each "may write" rule:
 
 ### 6.2 Work order
 
-Work flows in sequence: **Business → Analyst → Architect → Planner → Designer → Developer → Tester**. Parallel work happens only inside one step, for example two Developers on two different modules. Parallel work never spans two steps. (Hard for agent launches where the tool can block a launch: Claude Code `PreToolUse` on `Agent`, Codex `PreToolUse` on `collaborationspawn_agent`, Cursor `subagentStart`. The engine checks the requested agent type against the current phase and step. On Codex it reads `tool_input.agent_type`, and `SubagentStart` gives a second check on the top-level `agent_type` (probed, §5.4).)
+Work flows in sequence: **Business → Analyst → Architect → Planner → Designer → Developer → Tester**. Parallel work happens only inside one step, for example two Developers on two different modules. Parallel work never spans two steps. One planned exception: at Step 0 the Architect recommends the stack right after intake, before the Analyst starts (§8.2). The launch gate reads the allowed agents per step from the table in Section 9, so this exception is explicit, not a gap. (Hard for agent launches where the tool can block a launch: Claude Code `PreToolUse` on `Agent`, Codex `PreToolUse` on `collaborationspawn_agent`, Cursor `subagentStart`. The engine checks the requested agent type against the current phase and step. On Codex it reads `tool_input.agent_type`, and `SubagentStart` gives a second check on the top-level `agent_type` (probed, §5.4).)
 
 ### 6.3 Delegation limits
 
@@ -548,7 +553,7 @@ Before acting, the Orchestrator shows:
 Strength:
 
 - The questions themselves are **Soft** (a model decides what is unclear).
-- **Hard part:** `flamin baseline-review`, `flamin design` and `flamin cr-approve` refuse to run while any assumption linked to that scope is still `open`. The engine accepts "agreed" only through `flamin approve <assumption id>`, which follows the Approval Gate path (Section 15.3).
+- **Hard part:** `flamin baseline-review`, `flamin design` and `flamin cr-approve` refuse to run while any assumption linked to that scope is still `open`. The engine accepts "agreed" only through `flamin approve <assumption id>`, which follows the Approval Gate path (Section 15.3). The status is stored in `.flamin/approvals.json`, never read from `assumptions.md` (P-20).
 - Natural language understanding is Soft, so it can never bypass a Hard gate. A plain-language request that maps to a gated command still goes through the gate.
 
 ---
@@ -933,6 +938,7 @@ It blocks:
 - **Destructive commands:** recursive delete outside the project, force push, history rewrite of shared branches, `drop table`/`drop database`/`truncate`, wiping or moving `.flamin/` state files, disk format commands, and similar.
 - **Secret leaks:** API keys, tokens, private keys and passwords found in file content, command lines or network call arguments. Patterns cover common key prefixes, private key headers, `password=` style assignments, and long high-entropy strings next to words like "key", "token" or "secret".
 - **Agent writes to `.flamin/*.json`** (only the engine writes state).
+- **Agent writes to the enforcement layer** (P-19): `kit/`, the two launchers, `.claude/`, `.codex/`, `.cursor/`, `CLAUDE.md`, `AGENTS.md`, `.git/` and `.flamin/stacks/`. Only `flamin init`, `flamin upgrade` and an approved stack profile change write these. File-tool writes are blocked (Hard where a pre-write hook exists). Shell writes to these paths are caught by pattern (Heuristic). Backstop: `kit/MANIFEST` holds a hash of every kit file, and `check-staged` and `flamin doctor` fail on any mismatch that `flamin upgrade` did not make (Heuristic, because an edit to the engine and the manifest together could hide itself; CI on a clean runner narrows this). Reason: an agent that can edit the engine or a hook config can switch every other check off.
 - **Agent runs of human-only commands** (`flamin approve`, `cr-approve`, release approval), except through the ask path in 15.3.
 
 It runs `check-lock`, `check-boundary` and `check-phase` on file writes and agent launches.
@@ -997,6 +1003,8 @@ Rules:
 - Every approval and every rejection goes to the audit log with the request id.
 - **No answer means no.** A request stays pending and the gated action never runs. Pending requests show in `flamin status`.
 - An approval covers only the exact command or diff shown. A changed diff needs a new request. (Hard: the engine stores a hash of what was approved.)
+- **Where gate decisions live (P-20).** Open requests, answers, approved hashes and assumption status live only in `.flamin/approvals.json`, an engine-owned top-level state file (write-blocked for agents and checksummed, §3.2). Markdown files in `.flamin/decisions/` are readable notes. The engine never reads a gate decision from a file an agent may write. Reason: the Business agent may write `assumptions.md` and the Architect may write `.flamin/decisions/`, so a status kept there could be self-approved.
+- **When the tool prompt is trusted (P-21).** The `ask` path is used only when the hook input shows an interactive permission mode. In a bypass or auto-approve mode (for example Claude Code `bypassPermissions`), in a mode the engine does not recognise, or when the mode field is missing, the hook denies and sends the human to the terminal path, as on Codex. Reason: in those modes the tool prompt may be skipped, and the agent would approve itself. Whether `ask` still reaches the human in each mode is Unknown and is probed at build.
 
 ### 15.4 PreInvocation (deferred)
 
@@ -1011,14 +1019,14 @@ A future option for enterprise-wide systems: a safety filter that checks prompts
 - Every product starts at **v1**, built from scratch through the full flow (intake, Phase 1, Phase 2, Phase 3).
 - Each later round of change is the next version: v2, v3, and so on. This includes bug fixes found after any release.
 - There are no D cycles and no major or minor versions.
-- **Machine versions** for tools and app stores: `v<n>` becomes `<n>.0.0`, plus a build number that always increases (stored in `state.json`, never reused). Humans only see `v<n>`. (Hard.)
+- **Machine versions** for tools and app stores: `v<n>` becomes `<n>.0.0`, plus a build number that always increases (stored in `state.json`, never reused). Humans only see `v<n>`. (Hard.) The build number goes up by 1 each time `flamin release` builds a release candidate, and at no other time (P-22). Reason: app stores need a new, higher number for every upload, and a test can only check a number whose trigger is defined.
 
 ### 16.2 Each version after v1
 
-1. The human raises a list of change requests: `flamin cr-new "<title>"` (or in plain words).
+1. The human raises a list of change requests: `flamin cr-new "<title>"` (or in plain words). A CR joins the open version until that version's CR list is approved. After approval, new CRs join the next version (P-22).
 2. Business and Analyst analyse each CR: impact, affected modules, risks, questions. The result goes into `.flamin/versions/v<n>.md`.
 3. The human approves the CR list through the gate (`cr-approve`) **before any code change**. (Hard: `develop` and `generate` refuse to run for a version whose CR list is not approved.)
-4. Agents change the code and test it. Only the steps a CR needs are re-run for the affected modules (for example design, generate, develop, test). A CR that changes the data model needs a baseline amend (Section 9.2).
+4. Agents change the code and test it. Only the steps a CR needs are re-run for the affected modules (for example design, generate, develop, test). A CR that changes the data model needs a baseline amend (Section 9.2). `cr-approve` records, for each CR, the affected modules and the earliest step it needs. The engine resets those modules' step state from that step, so `check-phase` allows exactly that rework and nothing more (P-23).
 5. Integration test and architecture review run again.
 6. The human validates, then the version closes.
 
@@ -1028,6 +1036,7 @@ When a version closes, flamin writes a **release proposal**: test results, open 
 
 - Any version can be released.
 - A version that is not released stays in the history. Work continues in the next version.
+- `flamin release` closes the version and builds the proposal. The human's yes or no on the release gate is final for that version, either way. The next `cr-new` opens the following version (P-22).
 
 ### 16.4 Version record
 
@@ -1100,6 +1109,7 @@ Agents forget between sessions. `.flamin/` remembers.
 | Approval Gates | Hard (tool prompt) | Hard (terminal) | Hard (tool prompt for shell) | n/a |
 | Audit log with redaction | Hard write, Heuristic redaction | Hard write, Heuristic redaction; hosted tools not seen | Hard write, Heuristic redaction | n/a |
 | State file safety | Hard | Hard | Hard | Heuristic (checksum) |
+| Enforcement layer protection (P-19) | Hard for file tools, Heuristic for shell | Hard for file tools, Heuristic for shell | Hard for `Write`, Heuristic for shell | Heuristic (manifest hash) |
 | Handoff structure | Hard (validation) | Hard | Hard | n/a |
 | Handoff trigger at 80% | Soft + Heuristic | Soft | Soft + Heuristic | n/a |
 | Clarification and assumptions | Soft questions, Hard "agreed" gate | same | same | n/a |
@@ -1109,7 +1119,7 @@ Agents forget between sessions. `.flamin/` remembers.
 
 ## 21. Open questions
 
-Each item has one recommendation: **Fix**, **Workaround** or **Drop**. P-01 to P-14 were approved as D-12 to D-25, and P-15 to P-18 as D-26 to D-29 (Appendix A). Items marked "at build" are closed by probes during Stage 3.
+Each item has one recommendation: **Fix**, **Workaround** or **Drop**. P-01 to P-14 were approved as D-12 to D-25, and P-15 to P-18 as D-26 to D-29 (Appendix A). P-19 to P-26 were approved as D-30 to D-37 (Appendix A). Items marked "at build" are closed by probes during Stage 3.
 
 ### 21.1 Common to all tools
 
@@ -1199,6 +1209,19 @@ Approved in review round 3 (2026-09-24), from the live probes in §5.4.
 | D-28 | P-17 | Windows hook commands for Cursor and Codex call `.\flamin.cmd`, because both tools run hooks through PowerShell, which does not run a file from the current folder without `.\`. |
 | D-29 | P-18 | After any change to `.codex/hooks.json` (`init`, re-render or `upgrade`), flamin tells the human to re-trust the hooks in `/hooks`, because Codex silently skips changed hooks until then. |
 
+Approved in review round 4 (2026-09-24).
+
+| Id | Was | Decision |
+|---|---|---|
+| D-30 | P-19 | Agents may not write to the enforcement layer: `kit/`, launchers, `.claude/`, `.codex/`, `.cursor/`, `CLAUDE.md`, `AGENTS.md`, `.git/`, `.flamin/stacks/`. `kit/MANIFEST` hashes are checked by `check-staged` and `doctor`. Product stack profile changes go through the new-profile gate. Reason: an agent that can edit the engine, a launcher or a hook config can switch every other check off. |
+| D-31 | P-20 | All gate decisions (requests, answers, approved hashes, assumption status) live only in the engine-owned `.flamin/approvals.json`. Reason: agents may write `assumptions.md` and `.flamin/decisions/`, so a status kept there could be self-approved. |
+| D-32 | P-21 | The tool `ask` path is used only in an interactive permission mode. Any other or unknown mode: deny, then terminal path. Each mode is probed at build. |
+| D-33 | P-22 | A CR joins the open version until its CR list is approved, then the next one. `flamin release` closes the version. The build number goes up by 1 per release candidate, and at no other time. |
+| D-34 | P-23 | `cr-approve` records affected modules and the earliest step per CR; the engine resets those modules' step state from that step. |
+| D-35 | P-24 | CI runs `check-staged --range <base>..<head>`. |
+| D-36 | P-25 | On Codex and Cursor the Orchestrator is the main thread, with instructions in `AGENTS.md`, unless the build proves the tool can set a custom main agent. Only seven worker agent files are rendered. Launching an agent named `orchestrator` is denied. |
+| D-37 | P-26 | An audit line that cannot get the lock goes to a per-session spill file, merged at the next append. Audit lines are never dropped. |
+
 ### Proposed decisions (awaiting approval)
 
 None.
@@ -1234,4 +1257,4 @@ Python sources used for P-03 and P-04:
 | P2 | https://docs.python.org/3/using/windows.html | Fetched |
 | P3 | https://peps.python.org/pep-0394/ | Fetched |
 | P4 | https://docs.python.org/3/using/mac.html | Fetched |
-| P5 | https://packages.ubuntu.com/jammy/python3 | Official package page, read from the search result (default `python3` 3.10.6) |
+| P5 | https://packages.ubuntu.com/jammy/python3 | Fetched (full page, 2026-09-24): default `python3` is 3.10.6 on amd64 and i386, 3.10.4 on arm64 and other ports |
