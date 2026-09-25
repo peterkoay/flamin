@@ -1,0 +1,47 @@
+{
+  "types": {"string": "str", "int": "int", "float": "float", "bool": "bool"},
+  "defaults": {"string": "\"\"", "int": "0", "float": "0.0", "bool": "False"},
+  "literals": {"true": "True", "false": "False"},
+  "extension_points": {
+    "write": ["imports", "checkPermission", "validateAggregate"],
+    "query": ["imports", "checkPermission", "postProcessData"]
+  },
+  "loops": {
+    "entity_fields_decl": {"over": "entity_fields", "each": "    ${name}: ${type} = ${default}", "empty": "    pass"},
+    "item_assign": {"over": "entity_fields", "each": "${name}=row.${name}", "join": ", "},
+    "input_fields_decl": {"over": "input_fields", "each": "    ${name}: ${type} = ${default}", "empty": "    pass"},
+    "output_fields_decl": {"over": "output_fields", "each": "    ${name}: ${type} = ${default}", "empty": "    pass"},
+    "view_assign": {"over": "output_fields", "each": "${name}=item.${name}", "join": ", "},
+    "required_names": {"over": "input_fields", "where": "required=true", "each": "\"${name}\"", "join": ", "},
+    "stored_input_names": {"over": "stored_inputs", "each": "\"${name}\"", "join": ", "},
+    "filter_names": {"over": "filter_fields", "each": "\"${name}\"", "join": ", "},
+    "body_fields": {"over": "input_fields", "each": "    ${name}: ${type} | None = None", "empty": "    pass"},
+    "query_params": {"over": "input_fields", "each": "${name}: ${type} | None = None", "join": ", "},
+    "query_assign": {"over": "input_fields", "each": "\"${name}\": ${name}", "join": ", "}
+  },
+  "shared": [
+    {"template": "envelope.py.tpl", "path": "${root}common/envelope.py", "lock": "FULLY_LOCKED"}
+  ],
+  "scaffold": [
+    {"template": "main.py.tpl", "path": "${root}main.py"},
+    {"template": "conftest.py.tpl", "path": "${root}conftest.py"}
+  ],
+  "entity": [
+    {"template": "model.py.tpl", "path": "${module_dir}repository/${entity_snake}_model.py", "lock": "FULLY_LOCKED"},
+    {"template": "repository.py.tpl", "path": "${module_dir}repository/${entity_snake}_repository.py", "lock": "FULLY_LOCKED"}
+  ],
+  "write": [
+    {"template": "write_contract.py.tpl", "path": "${module_dir}contracts/${feature_snake}_contract.py", "lock": "FULLY_LOCKED"},
+    {"template": "assembler.py.tpl", "path": "${module_dir}assemblers/${feature_snake}_assembler.py", "lock": "FULLY_LOCKED"},
+    {"template": "write_base_service.py.tpl", "path": "${module_dir}services/base_${feature_snake}_service.py", "lock": "FULLY_LOCKED"},
+    {"template": "write_service.py.tpl", "path": "${module_dir}services/${feature_snake}_service.py", "lock": "STRUCTURE_LOCKED"},
+    {"template": "write_api.py.tpl", "path": "${module_dir}api/${feature_snake}_api.py", "lock": "FULLY_LOCKED"}
+  ],
+  "query": [
+    {"template": "query_contract.py.tpl", "path": "${module_dir}contracts/${feature_snake}_contract.py", "lock": "FULLY_LOCKED"},
+    {"template": "assembler.py.tpl", "path": "${module_dir}assemblers/${feature_snake}_assembler.py", "lock": "FULLY_LOCKED"},
+    {"template": "query_base_service.py.tpl", "path": "${module_dir}services/base_${feature_snake}_service.py", "lock": "FULLY_LOCKED"},
+    {"template": "query_service.py.tpl", "path": "${module_dir}services/${feature_snake}_service.py", "lock": "STRUCTURE_LOCKED"},
+    {"template": "query_api.py.tpl", "path": "${module_dir}api/${feature_snake}_api.py", "lock": "FULLY_LOCKED"}
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "analyst",
+  "tier": "Balanced",
+  "description": "flamin Analyst: turns agreed business input into testable requirements, acceptance criteria, edge cases and non-functional needs (Step 1, and CR impact analysis).",
+  "job": "Turn agreed business input into testable requirements, acceptance criteria, edge cases and non-functional needs.",
+  "tools": [
+    "read",
+    "search",
+    "write"
+  ],
+  "may_write": [
+    ".flamin/analysis/**",
+    ".flamin/versions/*.md"
+  ],
+  "may_not_write": [
+    ".flamin/analysis/*/plan.md"
+  ],
+  "must_never": [
+    "touch design or code"
+  ],
+  "read_only": false,
+  "prompt_file": "analyst.md"
+}

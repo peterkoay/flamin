@@ -1,0 +1,178 @@
+{
+  "types": {
+    "string": "String",
+    "int": "Integer",
+    "float": "Double",
+    "bool": "Boolean"
+  },
+  "defaults": {
+    "string": "\"\"",
+    "int": "0",
+    "float": "0.0",
+    "bool": "false"
+  },
+  "literals": {
+    "true": "true",
+    "false": "false"
+  },
+  "extension_points": {
+    "write": [
+      "imports",
+      "checkPermission",
+      "validateAggregate"
+    ],
+    "query": [
+      "imports",
+      "checkPermission",
+      "postProcessData"
+    ]
+  },
+  "loops": {
+    "entity_fields_decl": {
+      "over": "entity_fields",
+      "each": "    public ${type} ${name_camel} = ${default};"
+    },
+    "entity_copy": {
+      "over": "entity_fields",
+      "each": "        c.${name_camel} = this.${name_camel};"
+    },
+    "entity_params": {
+      "over": "entity_fields",
+      "each": "${type} ${name_camel}",
+      "join": ", "
+    },
+    "item_args": {
+      "over": "entity_fields",
+      "each": "row.${name_camel}",
+      "join": ", "
+    },
+    "input_params": {
+      "over": "input_fields",
+      "each": "${type} ${name_camel}",
+      "join": ", "
+    },
+    "output_params": {
+      "over": "output_fields",
+      "each": "${type} ${name_camel}",
+      "join": ", "
+    },
+    "view_args": {
+      "over": "output_fields",
+      "each": "item.${name_camel}()",
+      "join": ", "
+    },
+    "required_checks": {
+      "over": "input_fields",
+      "where": "required=true",
+      "each": "        if (FlaminException.isBlank(data.${name_camel}())) throw new FlaminException(400, \"${name} is required\");"
+    },
+    "stored_copy": {
+      "over": "stored_inputs",
+      "each": "        root.${name_camel} = data.${name_camel}();"
+    },
+    "filter_pred": {
+      "over": "filter_fields",
+      "each": "java.util.Objects.equals(row.${name_camel}, query.${name_camel}())",
+      "join": " && ",
+      "empty": "true"
+    },
+    "request_params": {
+      "over": "input_fields",
+      "each": "@RequestParam(name = \"${name}\", required = false) ${type} ${name_camel}",
+      "join": ", "
+    },
+    "query_args": {
+      "over": "input_fields",
+      "each": "${name_camel}",
+      "join": ", "
+    }
+  },
+  "shared": [
+    {
+      "template": "Envelope.java.tpl",
+      "path": "${root}src/main/java/app/common/Envelope.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "FlaminException.java.tpl",
+      "path": "${root}src/main/java/app/common/FlaminException.java",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "scaffold": [
+    {
+      "template": "Application.java.tpl",
+      "path": "${root}src/main/java/app/Application.java"
+    },
+    {
+      "template": "pom.xml.tpl",
+      "path": "${root}pom.xml"
+    }
+  ],
+  "entity": [
+    {
+      "template": "Model.java.tpl",
+      "path": "${module_dir}persist/${Entity}Model.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "Repository.java.tpl",
+      "path": "${module_dir}persist/${Entity}Repository.java",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "write": [
+    {
+      "template": "WriteContract.java.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "Assembler.java.tpl",
+      "path": "${module_dir}manager/${Feature}Assembler.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "WriteBaseService.java.tpl",
+      "path": "${module_dir}service/Base${Feature}Service.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "WriteService.java.tpl",
+      "path": "${module_dir}service/${Feature}Service.java",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "WriteController.java.tpl",
+      "path": "${module_dir}entrance/${Feature}Controller.java",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "query": [
+    {
+      "template": "QueryContract.java.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "Assembler.java.tpl",
+      "path": "${module_dir}manager/${Feature}Assembler.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "QueryBaseService.java.tpl",
+      "path": "${module_dir}service/Base${Feature}Service.java",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "QueryService.java.tpl",
+      "path": "${module_dir}service/${Feature}Service.java",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "QueryController.java.tpl",
+      "path": "${module_dir}entrance/${Feature}Controller.java",
+      "lock": "FULLY_LOCKED"
+    }
+  ]
+}

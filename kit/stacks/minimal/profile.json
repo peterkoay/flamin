@@ -1,0 +1,26 @@
+{
+  "name": "minimal",
+  "targets": [
+    "any"
+  ],
+  "description": "No layers, for scripts and small tools. Lock levels and phase checks still apply; layer and boundary checks are off.",
+  "layers": [],
+  "layer_dirs": {},
+  "may_use": {},
+  "module_root": "src/<module>/",
+  "extensions": [
+    ".py"
+  ],
+  "lock_comment": "#",
+  "import_patterns": [],
+  "test_patterns": [
+    "tests/**",
+    "**/test_*.py"
+  ],
+  "commands": {
+    "build": "python -m compileall -q .",
+    "test": "python -m unittest discover -s tests -t ."
+  },
+  "dependencies": {},
+  "templates": "templates/"
+}

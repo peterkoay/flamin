@@ -1,0 +1,38 @@
+# Sample CI workflow (GitHub Actions). Copy it to .github/workflows/flamin-check.yml in a product.
+# It runs the same backstop checks as the pre-commit hook on each pull request, on Linux, macOS and
+# Windows runners. CI has no staged diff, so it checks the pull request's commits with --range (D-35).
+name: flamin check
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  flamin:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Engine unit tests
+        run: python -B -m unittest discover -s kit/engine/tests -t kit/engine -v
+      - name: Kit integrity and machine check
+        shell: bash
+        run: python kit/engine/flamin.py doctor || true
+      - name: Backstop checks on the pull request's commits
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          python kit/engine/flamin.py check-staged --range "$RANGE"

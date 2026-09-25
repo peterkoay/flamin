@@ -1,0 +1,85 @@
+{
+  "name": "react-native",
+  "targets": [
+    "ios",
+    "android"
+  ],
+  "description": "React Native with TypeScript for iOS and Android. Same logic layers as typescript-react; screens use React Native components. iOS builds need macOS with Xcode or a cloud build service.",
+  "layers": [
+    "interface",
+    "application",
+    "assembly",
+    "data",
+    "shared",
+    "contracts"
+  ],
+  "layer_dirs": {
+    "interface": "screens",
+    "application": "features",
+    "assembly": "adapters",
+    "data": "api-client",
+    "shared": "shared",
+    "contracts": "contracts"
+  },
+  "may_use": {
+    "interface": [
+      "application",
+      "shared",
+      "contracts"
+    ],
+    "application": [
+      "assembly",
+      "data",
+      "shared",
+      "contracts"
+    ],
+    "assembly": [
+      "data",
+      "shared"
+    ],
+    "data": [
+      "shared"
+    ],
+    "shared": [],
+    "contracts": [
+      "shared"
+    ]
+  },
+  "module_root": "src/modules/<module>/",
+  "extensions": [
+    ".ts",
+    ".tsx"
+  ],
+  "lock_comment": "//",
+  "import_patterns": [
+    "^\\s*import\\s+(?:type\\s+)?[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "^\\s*export\\s+[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "import\\(\\s*['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]\\s*\\)"
+  ],
+  "test_patterns": [
+    "test/**",
+    "tests/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ],
+  "commands": {
+    "build": "npx tsc --noEmit -p .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "runtime": [
+      "react",
+      "react-native"
+    ],
+    "dev": [
+      "typescript",
+      "@types/react",
+      "@types/node"
+    ]
+  },
+  "templates": "templates/",
+  "device_builds": {
+    "ios": "needs macOS with Xcode, or a cloud build service (Approval Gate)",
+    "android": "needs the Android SDK and a device or emulator"
+  }
+}

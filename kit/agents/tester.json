@@ -1,0 +1,21 @@
+{
+  "name": "tester",
+  "tier": "Balanced",
+  "description": "flamin Tester: writes and runs tests, reports results with full output (Steps 10 and 11).",
+  "job": "Write and run tests, report results.",
+  "tools": [
+    "read",
+    "search",
+    "write",
+    "shell"
+  ],
+  "may_write": [
+    "<tests>"
+  ],
+  "may_not_write": [],
+  "must_never": [
+    "edit production code"
+  ],
+  "read_only": false,
+  "prompt_file": "tester.md"
+}

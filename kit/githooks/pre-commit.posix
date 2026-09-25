@@ -1,0 +1,3 @@
+#!/bin/sh
+# flamin backstop (Linux, macOS): check-lock, check-boundary and check-phase on the staged diff.
+exec "$(git rev-parse --show-toplevel)/flamin" check-staged

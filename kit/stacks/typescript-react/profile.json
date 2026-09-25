@@ -1,0 +1,81 @@
+{
+  "name": "typescript-react",
+  "targets": [
+    "web"
+  ],
+  "description": "TypeScript and React for the web. Pages call features; features call the backend through the api-client layer.",
+  "layers": [
+    "interface",
+    "application",
+    "assembly",
+    "data",
+    "shared",
+    "contracts"
+  ],
+  "layer_dirs": {
+    "interface": "pages",
+    "application": "features",
+    "assembly": "adapters",
+    "data": "api-client",
+    "shared": "shared",
+    "contracts": "contracts"
+  },
+  "may_use": {
+    "interface": [
+      "application",
+      "shared",
+      "contracts"
+    ],
+    "application": [
+      "assembly",
+      "data",
+      "shared",
+      "contracts"
+    ],
+    "assembly": [
+      "data",
+      "shared"
+    ],
+    "data": [
+      "shared"
+    ],
+    "shared": [],
+    "contracts": [
+      "shared"
+    ]
+  },
+  "module_root": "src/modules/<module>/",
+  "extensions": [
+    ".ts",
+    ".tsx"
+  ],
+  "lock_comment": "//",
+  "import_patterns": [
+    "^\\s*import\\s+(?:type\\s+)?[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "^\\s*export\\s+[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "import\\(\\s*['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]\\s*\\)"
+  ],
+  "test_patterns": [
+    "test/**",
+    "tests/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ],
+  "commands": {
+    "build": "npx tsc --noEmit -p .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "runtime": [
+      "react",
+      "react-dom"
+    ],
+    "dev": [
+      "typescript",
+      "@types/react",
+      "@types/react-dom",
+      "@types/node"
+    ]
+  },
+  "templates": "templates/"
+}

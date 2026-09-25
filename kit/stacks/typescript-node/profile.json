@@ -1,0 +1,78 @@
+{
+  "name": "typescript-node",
+  "targets": [
+    "backend"
+  ],
+  "description": "TypeScript on Node.js with Express. Runs with Node's built-in type stripping; tsc checks types.",
+  "layers": [
+    "interface",
+    "application",
+    "assembly",
+    "data",
+    "shared",
+    "contracts"
+  ],
+  "layer_dirs": {
+    "interface": "interface",
+    "application": "application",
+    "assembly": "assembly",
+    "data": "data",
+    "shared": "shared",
+    "contracts": "contracts"
+  },
+  "may_use": {
+    "interface": [
+      "application",
+      "shared",
+      "contracts"
+    ],
+    "application": [
+      "assembly",
+      "data",
+      "shared",
+      "contracts"
+    ],
+    "assembly": [
+      "data",
+      "shared"
+    ],
+    "data": [
+      "shared"
+    ],
+    "shared": [],
+    "contracts": [
+      "shared"
+    ]
+  },
+  "module_root": "src/modules/<module>/",
+  "extensions": [
+    ".ts"
+  ],
+  "lock_comment": "//",
+  "import_patterns": [
+    "^\\s*import\\s+(?:type\\s+)?[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "^\\s*export\\s+[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "import\\(\\s*['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]\\s*\\)",
+    "require\\(\\s*['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]\\s*\\)"
+  ],
+  "test_patterns": [
+    "test/**",
+    "tests/**",
+    "**/*.test.ts"
+  ],
+  "commands": {
+    "build": "npx tsc --noEmit -p .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "runtime": [
+      "express"
+    ],
+    "dev": [
+      "typescript",
+      "@types/express",
+      "@types/node"
+    ]
+  },
+  "templates": "templates/"
+}

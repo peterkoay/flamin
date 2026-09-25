@@ -1,0 +1,18 @@
+{
+  "agent": "orchestrator",
+  "env": {
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "10"
+  },
+  "permissions": {
+    "deny": [
+      "Agent(fork)",
+      "Agent(Explore)",
+      "Agent(Plan)",
+      "Agent(general-purpose)",
+      "Agent(claude)",
+      "Agent(statusline-setup)",
+      "Agent(claude-code-guide)"
+    ]
+  }
+}

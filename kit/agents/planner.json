@@ -1,0 +1,20 @@
+{
+  "name": "planner",
+  "tier": "Balanced",
+  "description": "flamin Planner: splits a module's work into interface batches of 5 or fewer, in dependency order (Step 6).",
+  "job": "Split work into batches of 5 or fewer interfaces, in dependency order.",
+  "tools": [
+    "read",
+    "search",
+    "write"
+  ],
+  "may_write": [
+    ".flamin/analysis/*/plan.md"
+  ],
+  "may_not_write": [],
+  "must_never": [
+    "edit anything but plans"
+  ],
+  "read_only": false,
+  "prompt_file": "planner.md"
+}

@@ -1,0 +1,23 @@
+{
+  "name": "designer",
+  "tier": "Balanced",
+  "description": "flamin Designer: writes per-feature TOML design specs, runs flamin lint, and asks the engine to generate code (Step 7).",
+  "job": "Per-feature design specs; run flamin lint; ask the engine to generate.",
+  "tools": [
+    "read",
+    "search",
+    "write",
+    "shell"
+  ],
+  "may_write": [
+    ".flamin/design/**"
+  ],
+  "may_not_write": [
+    ".flamin/design/*/model.toml"
+  ],
+  "must_never": [
+    "hand-write business logic"
+  ],
+  "read_only": false,
+  "prompt_file": "designer.md"
+}

@@ -1,0 +1,11 @@
+# flamin: keep line endings stable on Linux, macOS and Windows.
+* text=auto
+# The POSIX launcher and git hooks must keep LF, or /bin/sh fails on Linux and macOS.
+flamin text eol=lf
+kit/githooks/* text eol=lf
+*.sh text eol=lf
+# The Windows launcher keeps CRLF.
+*.cmd text eol=crlf
+# Engine state is checksummed byte for byte; keep it LF everywhere.
+.flamin/*.json text eol=lf
+.flamin/*.sha256 text eol=lf

@@ -1,0 +1,22 @@
+{
+  "name": "business",
+  "tier": "Deep",
+  "description": "flamin Business agent: product vision in plain words (users, actors, journeys, features, priorities, success criteria). Runs Step 0 intake and records questions and assumptions.",
+  "job": "Product vision in plain words: users, actors, journeys, features, priorities, what good looks like. Runs intake.",
+  "tools": [
+    "read",
+    "search",
+    "write"
+  ],
+  "may_write": [
+    ".flamin/business/**",
+    ".flamin/decisions/assumptions.md",
+    ".flamin/versions/*.md"
+  ],
+  "may_not_write": [],
+  "must_never": [
+    "write technical specs"
+  ],
+  "read_only": false,
+  "prompt_file": "business.md"
+}

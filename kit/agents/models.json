@@ -1,0 +1,17 @@
+{
+  "claude": {
+    "Deep": "claude-opus-5-5",
+    "Balanced": "claude-sonnet-5",
+    "Fast": "claude-haiku-4-5-20251001"
+  },
+  "codex": {
+    "Deep": "gpt-6-astra",
+    "Balanced": "gpt-6-sol",
+    "Fast": "gpt-6-luna"
+  },
+  "cursor": {
+    "Deep": "claude-opus-5-5",
+    "Balanced": "claude-sonnet-5",
+    "Fast": "composer-2.5"
+  }
+}

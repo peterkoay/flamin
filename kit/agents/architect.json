@@ -1,0 +1,24 @@
+{
+  "name": "architect",
+  "tier": "Deep",
+  "description": "flamin Architect: stack recommendation (Step 0), module boundaries, data model, aggregates and contracts (Steps 2-5), baseline owner, architecture review (Step 12).",
+  "job": "Stack profile, module boundaries, data model, aggregates, contracts, baseline owner, architecture review.",
+  "tools": [
+    "read",
+    "search",
+    "write"
+  ],
+  "may_write": [
+    ".flamin/technical/**",
+    ".flamin/design/*/model.toml",
+    ".flamin/decisions/**"
+  ],
+  "may_not_write": [
+    ".flamin/decisions/assumptions.md"
+  ],
+  "must_never": [
+    "edit product code"
+  ],
+  "read_only": false,
+  "prompt_file": "architect.md"
+}

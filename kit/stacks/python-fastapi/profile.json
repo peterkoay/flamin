@@ -1,0 +1,27 @@
+{
+  "name": "python-fastapi",
+  "targets": ["backend"],
+  "description": "Python with FastAPI for HTTP. Service, assembly, data and contract layers are plain Python; only the api layer imports FastAPI.",
+  "layers": ["interface", "application", "assembly", "data", "shared", "contracts"],
+  "layer_dirs": {"interface": "api", "application": "services", "assembly": "assemblers",
+                 "data": "repository", "shared": "common", "contracts": "contracts"},
+  "may_use": {
+    "interface": ["application", "shared", "contracts"],
+    "application": ["assembly", "data", "shared", "contracts"],
+    "assembly": ["data", "shared"],
+    "data": ["shared"],
+    "shared": [],
+    "contracts": ["shared"]
+  },
+  "module_root": "modules/<module>/",
+  "extensions": [".py"],
+  "lock_comment": "#",
+  "import_patterns": [
+    "^\\s*from\\s+modules\\.(?P<module>\\w+)\\.(?P<layer>\\w+)",
+    "^\\s*import\\s+modules\\.(?P<module>\\w+)\\.(?P<layer>\\w+)"
+  ],
+  "test_patterns": ["tests/**", "**/tests/**", "**/test_*.py", "**/*_test.py", "conftest.py"],
+  "commands": {"build": "python -m compileall -q modules common main.py", "test": "python -m pytest -q"},
+  "dependencies": {"runtime": ["fastapi"], "test": ["pytest", "httpx"]},
+  "templates": "templates/"
+}

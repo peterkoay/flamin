@@ -1,0 +1,170 @@
+{
+  "types": {
+    "string": "string",
+    "int": "number",
+    "float": "number",
+    "bool": "boolean"
+  },
+  "defaults": {
+    "string": "\"\"",
+    "int": "0",
+    "float": "0",
+    "bool": "false"
+  },
+  "literals": {
+    "true": "true",
+    "false": "false"
+  },
+  "extension_points": {
+    "write": [
+      "imports",
+      "checkPermission",
+      "validateAggregate"
+    ],
+    "query": [
+      "imports",
+      "checkPermission",
+      "postProcessData"
+    ]
+  },
+  "loops": {
+    "entity_fields_decl": {
+      "over": "entity_fields",
+      "each": "  ${name_camel}: ${type};"
+    },
+    "entity_defaults": {
+      "over": "stored_fields",
+      "each": "    ${name_camel}: ${default},"
+    },
+    "item_assign": {
+      "over": "entity_fields",
+      "each": "${name_camel}: row.${name_camel}",
+      "join": ", "
+    },
+    "input_fields_decl": {
+      "over": "input_fields",
+      "each": "  ${name_camel}?: ${type};"
+    },
+    "output_fields_decl": {
+      "over": "output_fields",
+      "each": "  ${name_camel}: ${type};"
+    },
+    "view_assign": {
+      "over": "output_fields",
+      "each": "${name_camel}: item.${name_camel}",
+      "join": ", "
+    },
+    "required_checks": {
+      "over": "input_fields",
+      "where": "required=true",
+      "each": "    if (data.${name_camel} === undefined || data.${name_camel} === null || data.${name_camel} === \"\") throw new FlaminError(400, \"${name} is required\");"
+    },
+    "stored_copy": {
+      "over": "stored_inputs",
+      "each": "    root.${name_camel} = data.${name_camel} as ${type};"
+    },
+    "filter_pred": {
+      "over": "filter_fields",
+      "each": "row.${name_camel} === query.${name_camel}",
+      "join": " && ",
+      "empty": "true"
+    },
+    "query_from_req": {
+      "over": "input_fields",
+      "each": "${name_camel}: req.query.${name} === undefined ? undefined : String(req.query.${name})",
+      "join": ", "
+    },
+    "body_from_req": {
+      "over": "input_fields",
+      "each": "${name_camel}: body.${name}",
+      "join": ", "
+    }
+  },
+  "shared": [
+    {
+      "template": "envelope.ts.tpl",
+      "path": "${root}src/common/envelope.ts",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "scaffold": [
+    {
+      "template": "app.ts.tpl",
+      "path": "${root}src/app.ts"
+    },
+    {
+      "template": "package.json.tpl",
+      "path": "${root}package.json"
+    },
+    {
+      "template": "tsconfig.json.tpl",
+      "path": "${root}tsconfig.json"
+    }
+  ],
+  "entity": [
+    {
+      "template": "model.ts.tpl",
+      "path": "${module_dir}data/${Entity}Model.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "repository.ts.tpl",
+      "path": "${module_dir}data/${Entity}Repository.ts",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "write": [
+    {
+      "template": "write_contract.ts.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "assembler.ts.tpl",
+      "path": "${module_dir}assembly/${Feature}Assembler.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_base_service.ts.tpl",
+      "path": "${module_dir}application/Base${Feature}Service.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_service.ts.tpl",
+      "path": "${module_dir}application/${Feature}Service.ts",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "write_route.ts.tpl",
+      "path": "${module_dir}interface/${Feature}Route.ts",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "query": [
+    {
+      "template": "query_contract.ts.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "assembler.ts.tpl",
+      "path": "${module_dir}assembly/${Feature}Assembler.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_base_service.ts.tpl",
+      "path": "${module_dir}application/Base${Feature}Service.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_service.ts.tpl",
+      "path": "${module_dir}application/${Feature}Service.ts",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "query_route.ts.tpl",
+      "path": "${module_dir}interface/${Feature}Route.ts",
+      "lock": "FULLY_LOCKED"
+    }
+  ]
+}

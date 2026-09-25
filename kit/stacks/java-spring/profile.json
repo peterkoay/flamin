@@ -1,0 +1,71 @@
+{
+  "name": "java-spring",
+  "targets": [
+    "backend"
+  ],
+  "description": "Java 17+ with Spring Boot 3.2 (Maven). Layer folders: entrance, service, manager, persist, common, contracts.",
+  "layers": [
+    "interface",
+    "application",
+    "assembly",
+    "data",
+    "shared",
+    "contracts"
+  ],
+  "layer_dirs": {
+    "interface": "entrance",
+    "application": "service",
+    "assembly": "manager",
+    "data": "persist",
+    "shared": "common",
+    "contracts": "contracts"
+  },
+  "may_use": {
+    "interface": [
+      "application",
+      "shared",
+      "contracts"
+    ],
+    "application": [
+      "assembly",
+      "data",
+      "shared",
+      "contracts"
+    ],
+    "assembly": [
+      "data",
+      "shared"
+    ],
+    "data": [
+      "shared"
+    ],
+    "shared": [],
+    "contracts": [
+      "shared"
+    ]
+  },
+  "module_root": "src/main/java/app/modules/<module>/",
+  "extensions": [
+    ".java"
+  ],
+  "lock_comment": "//",
+  "import_patterns": [
+    "^\\s*import\\s+(?:static\\s+)?app\\.modules\\.(?P<module>\\w+)\\.(?P<layer>\\w+)"
+  ],
+  "test_patterns": [
+    "src/test/**"
+  ],
+  "commands": {
+    "build": "mvn -q compile",
+    "test": "mvn -q test"
+  },
+  "dependencies": {
+    "runtime": [
+      "org.springframework.boot:spring-boot-starter-web:3.2.0"
+    ],
+    "test": [
+      "org.springframework.boot:spring-boot-starter-test:3.2.0"
+    ]
+  },
+  "templates": "templates/"
+}

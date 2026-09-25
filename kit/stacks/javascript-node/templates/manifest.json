@@ -1,0 +1,164 @@
+{
+  "types": {
+    "string": "string",
+    "int": "number",
+    "float": "number",
+    "bool": "boolean"
+  },
+  "defaults": {
+    "string": "\"\"",
+    "int": "0",
+    "float": "0",
+    "bool": "false"
+  },
+  "literals": {
+    "true": "true",
+    "false": "false"
+  },
+  "extension_points": {
+    "write": [
+      "imports",
+      "checkPermission",
+      "validateAggregate"
+    ],
+    "query": [
+      "imports",
+      "checkPermission",
+      "postProcessData"
+    ]
+  },
+  "loops": {
+    "entity_defaults": {
+      "over": "stored_fields",
+      "each": "    ${name_camel}: ${default},"
+    },
+    "item_assign": {
+      "over": "entity_fields",
+      "each": "${name_camel}: row.${name_camel}",
+      "join": ", "
+    },
+    "view_assign": {
+      "over": "output_fields",
+      "each": "${name_camel}: item.${name_camel}",
+      "join": ", "
+    },
+    "required_checks": {
+      "over": "input_fields",
+      "where": "required=true",
+      "each": "    if (data.${name_camel} === undefined || data.${name_camel} === null || data.${name_camel} === \"\") throw new FlaminError(400, \"${name} is required\");"
+    },
+    "stored_copy": {
+      "over": "stored_inputs",
+      "each": "    root.${name_camel} = data.${name_camel};"
+    },
+    "filter_pred": {
+      "over": "filter_fields",
+      "each": "row.${name_camel} === query.${name_camel}",
+      "join": " && ",
+      "empty": "true"
+    },
+    "query_from_req": {
+      "over": "input_fields",
+      "each": "${name_camel}: req.query.${name} === undefined ? undefined : String(req.query.${name})",
+      "join": ", "
+    },
+    "body_from_req": {
+      "over": "input_fields",
+      "each": "${name_camel}: body.${name}",
+      "join": ", "
+    },
+    "input_names": {
+      "over": "input_fields",
+      "each": "\"${name_camel}\"",
+      "join": ", "
+    },
+    "output_names": {
+      "over": "output_fields",
+      "each": "\"${name_camel}\"",
+      "join": ", "
+    }
+  },
+  "shared": [
+    {
+      "template": "envelope.js.tpl",
+      "path": "${root}src/common/envelope.js",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "scaffold": [
+    {
+      "template": "app.js.tpl",
+      "path": "${root}src/app.js"
+    },
+    {
+      "template": "package.json.tpl",
+      "path": "${root}package.json"
+    }
+  ],
+  "entity": [
+    {
+      "template": "model.js.tpl",
+      "path": "${module_dir}data/${Entity}Model.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "repository.js.tpl",
+      "path": "${module_dir}data/${Entity}Repository.js",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "write": [
+    {
+      "template": "write_contract.js.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "assembler.js.tpl",
+      "path": "${module_dir}assembly/${Feature}Assembler.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_base_service.js.tpl",
+      "path": "${module_dir}application/Base${Feature}Service.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_service.js.tpl",
+      "path": "${module_dir}application/${Feature}Service.js",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "write_route.js.tpl",
+      "path": "${module_dir}interface/${Feature}Route.js",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "query": [
+    {
+      "template": "query_contract.js.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "assembler.js.tpl",
+      "path": "${module_dir}assembly/${Feature}Assembler.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_base_service.js.tpl",
+      "path": "${module_dir}application/Base${Feature}Service.js",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_service.js.tpl",
+      "path": "${module_dir}application/${Feature}Service.js",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "query_route.js.tpl",
+      "path": "${module_dir}interface/${Feature}Route.js",
+      "lock": "FULLY_LOCKED"
+    }
+  ]
+}

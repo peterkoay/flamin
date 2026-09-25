@@ -1,0 +1,65 @@
+{
+  "types": {
+    "string": "str",
+    "int": "int",
+    "float": "float",
+    "bool": "bool"
+  },
+  "defaults": {
+    "string": "\"\"",
+    "int": "0",
+    "float": "0.0",
+    "bool": "False"
+  },
+  "literals": {
+    "true": "True",
+    "false": "False"
+  },
+  "extension_points": {
+    "write": [
+      "imports",
+      "checkPermission",
+      "validateAggregate"
+    ],
+    "query": [
+      "imports",
+      "checkPermission",
+      "postProcessData"
+    ]
+  },
+  "loops": {
+    "required_names": {
+      "over": "input_fields",
+      "where": "required=true",
+      "each": "\"${name}\"",
+      "join": ", "
+    }
+  },
+  "shared": [],
+  "scaffold": [],
+  "entity": [],
+  "write": [
+    {
+      "template": "write_base.py.tpl",
+      "path": "${module_dir}${feature_snake}_base.py",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write.py.tpl",
+      "path": "${module_dir}${feature_snake}.py",
+      "lock": "STRUCTURE_LOCKED"
+    }
+  ],
+  "query": [
+    {
+      "template": "query_base.py.tpl",
+      "path": "${module_dir}${feature_snake}_base.py",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query.py.tpl",
+      "path": "${module_dir}${feature_snake}.py",
+      "lock": "STRUCTURE_LOCKED"
+    }
+  ]
+}

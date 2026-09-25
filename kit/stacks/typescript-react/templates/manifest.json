@@ -1,0 +1,154 @@
+{
+  "types": {
+    "string": "string",
+    "int": "number",
+    "float": "number",
+    "bool": "boolean"
+  },
+  "defaults": {
+    "string": "\"\"",
+    "int": "0",
+    "float": "0",
+    "bool": "false"
+  },
+  "literals": {
+    "true": "true",
+    "false": "false"
+  },
+  "extension_points": {
+    "write": [
+      "imports",
+      "checkPermission",
+      "validateAggregate"
+    ],
+    "query": [
+      "imports",
+      "checkPermission",
+      "postProcessData"
+    ]
+  },
+  "loops": {
+    "input_fields_decl": {
+      "over": "input_fields",
+      "each": "  ${name_camel}?: ${type};"
+    },
+    "output_fields_decl": {
+      "over": "output_fields",
+      "each": "  ${name_camel}: ${type};"
+    },
+    "view_assign": {
+      "over": "output_fields",
+      "each": "${name_camel}: item.${name_camel}",
+      "join": ", "
+    },
+    "wire_to_item": {
+      "over": "output_fields",
+      "each": "${name_camel}: (raw[\"${name}\"] ?? raw[\"${name_camel}\"]) as ${type}",
+      "join": ", "
+    },
+    "wire_body": {
+      "over": "input_fields",
+      "each": "\"${name}\": data.${name_camel}",
+      "join": ", "
+    },
+    "query_params_set": {
+      "over": "input_fields",
+      "each": "  if (query.${name_camel} !== undefined) params.set(\"${name}\", String(query.${name_camel}));"
+    },
+    "required_checks": {
+      "over": "input_fields",
+      "where": "required=true",
+      "each": "    if (data.${name_camel} === undefined || data.${name_camel} === null || data.${name_camel} === \"\") throw new FlaminError(400, \"${name} is required\");"
+    },
+    "form_inputs_web": {
+      "over": "input_fields",
+      "each": "      <label>\n        ${name}\n        <input name=\"${name_camel}\" value={form.${name_camel} ?? \"\"} onChange={(e) => setForm({ ...form, ${name_camel}: e.target.value })} />\n      </label>"
+    },
+    "form_inputs_native": {
+      "over": "input_fields",
+      "each": "      <TextInput placeholder=\"${name}\" value={form.${name_camel} ?? \"\"} onChangeText={(v) => setForm({ ...form, ${name_camel}: v })} />"
+    }
+  },
+  "shared": [
+    {
+      "template": "envelope.ts.tpl",
+      "path": "${root}src/common/envelope.ts",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "scaffold": [
+    {
+      "template": "package.json.tpl",
+      "path": "${root}package.json"
+    },
+    {
+      "template": "tsconfig.json.tpl",
+      "path": "${root}tsconfig.json"
+    }
+  ],
+  "entity": [],
+  "write": [
+    {
+      "template": "write_contract.ts.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_client.ts.tpl",
+      "path": "${module_dir}api-client/${Feature}Client.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "adapter.ts.tpl",
+      "path": "${module_dir}adapters/${Feature}Adapter.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_base_feature.ts.tpl",
+      "path": "${module_dir}features/Base${Feature}Feature.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "write_feature.ts.tpl",
+      "path": "${module_dir}features/${Feature}Feature.ts",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "page.tsx.tpl",
+      "path": "${module_dir}pages/${Feature}Page.tsx",
+      "lock": "FULLY_LOCKED"
+    }
+  ],
+  "query": [
+    {
+      "template": "query_contract.ts.tpl",
+      "path": "${module_dir}contracts/${Feature}Contract.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_client.ts.tpl",
+      "path": "${module_dir}api-client/${Feature}Client.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "adapter.ts.tpl",
+      "path": "${module_dir}adapters/${Feature}Adapter.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_base_feature.ts.tpl",
+      "path": "${module_dir}features/Base${Feature}Feature.ts",
+      "lock": "FULLY_LOCKED"
+    },
+    {
+      "template": "query_feature.ts.tpl",
+      "path": "${module_dir}features/${Feature}Feature.ts",
+      "lock": "STRUCTURE_LOCKED"
+    },
+    {
+      "template": "page.tsx.tpl",
+      "path": "${module_dir}pages/${Feature}Page.tsx",
+      "lock": "FULLY_LOCKED"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+#!/bin/sh
+# flamin backstop (Windows; Git for Windows runs hooks with its bundled sh): check-staged on the staged diff.
+exec "$(git rev-parse --show-toplevel)/flamin.cmd" check-staged

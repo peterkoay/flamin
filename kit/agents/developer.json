@@ -1,0 +1,24 @@
+{
+  "name": "developer",
+  "tier": "Balanced",
+  "deep_when": "multi-aggregate change, concurrency, or failed once on Balanced",
+  "description": "flamin Developer: fills extension points, wires cross-module contracts, fixes bugs, inside its leased module only (Steps 8-9).",
+  "job": "Fill extension points, wire contracts, fix bugs.",
+  "tools": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "shell"
+  ],
+  "may_write": [
+    "<product-code>"
+  ],
+  "may_not_write": [],
+  "must_never": [
+    "edit locked code",
+    "cross module boundaries"
+  ],
+  "read_only": false,
+  "prompt_file": "developer.md"
+}

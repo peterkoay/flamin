@@ -1,0 +1,44 @@
+# flamin: rendered by `flamin init`. Do not edit; changes go in the kit.
+# Delegation depth 1 (only the main-thread Orchestrator starts agents) and up to 10 agents in parallel.
+[agents]
+max_depth = 1
+max_threads = 10
+
+# Hooks: every hook calls the flamin engine. Codex skips changed hooks until you trust them again in /hooks.
+
+[[hooks.PreToolUse]]
+matcher = '^(Bash|apply_patch|collaborationspawn_agent|mcp__.*)$'
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '"$(git rev-parse --show-toplevel)/flamin" hook pretool --tool codex'
+command_windows = '& "$(git rev-parse --show-toplevel)\flamin.cmd" hook pretool --tool codex; exit $LASTEXITCODE'
+timeout = 30
+
+[[hooks.SubagentStart]]
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '"$(git rev-parse --show-toplevel)/flamin" hook pretool --tool codex'
+command_windows = '& "$(git rev-parse --show-toplevel)\flamin.cmd" hook pretool --tool codex; exit $LASTEXITCODE'
+timeout = 30
+
+[[hooks.PostToolUse]]
+matcher = '^(Bash|apply_patch|collaborationspawn_agent|mcp__.*)$'
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = '"$(git rev-parse --show-toplevel)/flamin" hook posttool --tool codex'
+command_windows = '& "$(git rev-parse --show-toplevel)\flamin.cmd" hook posttool --tool codex; exit $LASTEXITCODE'
+timeout = 30
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = '"$(git rev-parse --show-toplevel)/flamin" hook sessionend --tool codex'
+command_windows = '& "$(git rev-parse --show-toplevel)\flamin.cmd" hook sessionend --tool codex; exit $LASTEXITCODE'
+timeout = 30
+
+[[hooks.SessionEnd]]
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = '"$(git rev-parse --show-toplevel)/flamin" hook sessionend --tool codex'
+command_windows = '& "$(git rev-parse --show-toplevel)\flamin.cmd" hook sessionend --tool codex; exit $LASTEXITCODE'
+timeout = 3

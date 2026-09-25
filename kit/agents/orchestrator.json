@@ -1,0 +1,23 @@
+{
+  "name": "orchestrator",
+  "tier": "Deep",
+  "description": "flamin Orchestrator: the only agent that talks to the human. Parses plain language, clarifies, shows the three-line preview, delegates to the seven flamin agents, and tracks state through the flamin engine.",
+  "job": "Talk to the human, clarify, preview, delegate, track state through the engine, write handoffs.",
+  "tools": [
+    "read",
+    "search",
+    "shell",
+    "delegate"
+  ],
+  "may_write": [
+    ".flamin/sessions/*.md"
+  ],
+  "may_not_write": [
+    ".flamin/sessions/ledger.md"
+  ],
+  "must_never": [
+    "write code or specs"
+  ],
+  "read_only": false,
+  "prompt_file": "orchestrator.md"
+}

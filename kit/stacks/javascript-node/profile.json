@@ -1,0 +1,73 @@
+{
+  "name": "javascript-node",
+  "targets": [
+    "backend"
+  ],
+  "description": "JavaScript on Node.js with Express. Same template shape as typescript-node, without types.",
+  "layers": [
+    "interface",
+    "application",
+    "assembly",
+    "data",
+    "shared",
+    "contracts"
+  ],
+  "layer_dirs": {
+    "interface": "interface",
+    "application": "application",
+    "assembly": "assembly",
+    "data": "data",
+    "shared": "shared",
+    "contracts": "contracts"
+  },
+  "may_use": {
+    "interface": [
+      "application",
+      "shared",
+      "contracts"
+    ],
+    "application": [
+      "assembly",
+      "data",
+      "shared",
+      "contracts"
+    ],
+    "assembly": [
+      "data",
+      "shared"
+    ],
+    "data": [
+      "shared"
+    ],
+    "shared": [],
+    "contracts": [
+      "shared"
+    ]
+  },
+  "module_root": "src/modules/<module>/",
+  "extensions": [
+    ".js"
+  ],
+  "lock_comment": "//",
+  "import_patterns": [
+    "^\\s*import\\s+(?:type\\s+)?[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "^\\s*export\\s+[^'\"]*?from\\s+['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]",
+    "import\\(\\s*['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]\\s*\\)",
+    "require\\(\\s*['\"](?P<path>\\.{1,2}/[^'\"]+)['\"]\\s*\\)"
+  ],
+  "test_patterns": [
+    "test/**",
+    "tests/**",
+    "**/*.test.js"
+  ],
+  "commands": {
+    "build": "node --check src/app.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "runtime": [
+      "express"
+    ]
+  },
+  "templates": "templates/"
+}
