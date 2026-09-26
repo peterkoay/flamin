@@ -1,6 +1,6 @@
 # flamin Design
 
-**Status:** Approved on 2026-09-24 (decisions D-01 to D-37) | **Kit version:** v1 | **Date:** 2026-09-24 | This is the design the Stage 3 build follows.
+**Status:** Approved on 2026-09-26 (decisions D-01 to D-46) | **Kit version:** v1 | **Date:** 2026-09-26 | This is the design the Stage 3 build follows.
 
 ---
 
@@ -48,6 +48,7 @@ The design has three big ideas:
 <project root>/
 ├── flamin                 # POSIX launcher (Linux, macOS), one line
 ├── flamin.cmd             # Windows launcher, one line
+├── .gitattributes         # line endings per path (D-45)
 ├── kit/                   # everything that is the same for every product
 │   ├── VERSION            # kit version, e.g. "v1"
 │   ├── MANIFEST           # hash of every kit file (P-19)
@@ -68,13 +69,13 @@ The design has three big ideas:
 
 Files rendered by adapters (`.claude/`, `CLAUDE.md`, `.codex/`, `AGENTS.md`, `.cursor/`) are build outputs of `flamin init`. They hold no rules of their own. Running `flamin init --tool <name>` again re-renders them safely.
 
-**Shared files versus machine-local files (P-04).** A committed file must work on every OS. Any file that has to name a Python command is **machine-local**: `flamin init` renders it for the current OS, git ignores it, and `flamin doctor` re-renders it when the OS or the Python command changes. Codex is the one exception, because its hook config carries both `command` and `command_windows` in one shared file.
+**Shared files versus machine-local files (P-04).** A committed file must work on every OS. Any file that has to name a Python command is **machine-local**: `flamin init` renders it for the current OS, git ignores it, and `flamin doctor` re-renders it when the OS or the Python command changes. Codex is the one exception, because its hook config, inline in `.codex/config.toml` (D-39), carries both `command` and `command_windows` in one shared file.
 
 | File | Shared or machine-local | Why |
 |---|---|---|
 | `.claude/agents/`, `.claude/settings.json` (agent, env, permissions), `CLAUDE.md` | Shared | No Python command inside |
 | `.claude/settings.local.json` (hooks) | Machine-local | Hook command differs per OS |
-| `.codex/agents/`, `.codex/config.toml`, `AGENTS.md` | Shared | `command_windows` covers Windows |
+| `.codex/agents/`, `.codex/config.toml`, `AGENTS.md` | Shared | `command_windows` covers Windows; hooks are inline in `config.toml` (D-39) |
 | `.cursor/agents/`, `AGENTS.md` | Shared | No Python command inside |
 | `.cursor/hooks.json` | Machine-local | Hook command differs per OS |
 | `.git/hooks/pre-commit` | Machine-local | Git never commits it anyway |
@@ -111,6 +112,7 @@ The folder `flamin_v3_Claude` is the **master kit**. It is a clean template and 
 - It holds no product code, no `.flamin/` state, no audit logs, no caches and no secrets. (Hard at release of the kit: `flamin doctor --kit` fails if any of these exist.)
 - To start a product: copy the folder, rename it (for example `flamin_cinema`), open it in any tool, and say "start a new project" (or run `flamin init`). This creates a fresh `.flamin/`.
 - On every startup the Orchestrator runs `flamin status`. If state exists, it asks: "Continue product `<name>`, or start a new product?" A new product in a folder that already has one is refused, with advice to copy the master kit again. One folder never mixes two products. (Hard: `flamin init` refuses to overwrite existing state.)
+- **Master-kit maintenance mode (D-46).** It turns on only when a human runs `flamin kit-maintenance on` in a terminal (human-only through the hook). This writes a git-ignored flag, `.flamin-kit-maintenance`. With the flag and no `.flamin/`, the product flow does not apply and D-30 is lifted for kit files only. Kit changes must pass the engine tests and refresh `kit/MANIFEST`. `flamin init` refuses while the flag is set. "No product found" alone never enables this mode, because a freshly copied product folder looks the same before `flamin init`. The master kit keeps shipping the rendered adapters, so the plain-language start works. How maintenance sessions get write tools is not decided yet. (Hard for the switch: only a human can set the flag, and `flamin doctor --kit` fails while it exists, so a shipped kit never carries it.)
 
 ### 2.4 Paths
 
@@ -121,9 +123,9 @@ The folder `flamin_v3_Claude` is the **master kit**. It is a clean template and 
 
 1. Checks the kit runtime (Python 3.11 or newer) and prints the working Python command.
 2. Checks for a git repo. Creates one if missing, or warns if creation fails, because the backstop needs git.
-3. Checks for leftover state. Refuses if a product already lives here.
+3. Checks for leftover state. Refuses if a product already lives here. Also refuses while the kit-maintenance flag is set (D-46).
 4. Creates `.flamin/` with empty templates and `state.json` at phase 0 (intake), version v1.
-5. Writes `.git/hooks/pre-commit` for the current OS (one line calling the matching launcher), so the backstop is active.
+5. Writes `.git/hooks/pre-commit` for the current OS (one line calling the matching launcher), so the backstop is active. It writes the file with LF line endings and the executable bit itself, because git never checks this file out, so `.gitattributes` cannot reach it (D-45).
 6. Renders adapters for `--tool claude|codex|cursor|all` (default `all`), including the machine-local hook files for the current OS.
 7. Writes `.gitignore` entries (Section 2.7).
 
@@ -131,7 +133,7 @@ Every step is safe to run twice.
 
 ### 2.6 `flamin doctor`
 
-Reports anything that blocks the kit on this machine: Python command that works (`python3` on Linux and macOS, `python` on Windows), Python version and whether it is past end of life, the Windows Store stub (a `python` or `python3` that only opens the Store), git presence, hooks path, adapter files present and current, stale lock file, hooks that the tool has not yet trusted (Codex requires a trust review before non-managed hooks run; Claude Code and Cursor require a trusted workspace), absolute paths, and state checksum mismatches. `flamin doctor --kit` adds the master-kit cleanliness check.
+Reports anything that blocks the kit on this machine: Python command that works (`python3` on Linux and macOS, `python` on Windows), Python version and whether it is past end of life, the Windows Store stub (a `python` or `python3` that only opens the Store), git presence, hooks path, adapter files present and current, stale lock file, hooks that the tool has not yet trusted (Codex requires a trust review before non-managed hooks run; Claude Code and Cursor require a trusted workspace), absolute paths, and state checksum mismatches. `flamin doctor --kit` adds the master-kit cleanliness check, and fails while the kit-maintenance flag exists (D-46). `flamin doctor` also checks that Codex accepts the `[agents]` keys (`codex exec --strict-config`, D-38), that the rendered Codex hook runs on the installed Codex (D-40), and that `flamin` and the hook templates keep the executable bit (D-45).
 
 ### 2.7 `.gitignore`
 
@@ -141,6 +143,7 @@ Reports anything that blocks the kit on this machine: Python command that works 
 .flamin/tmp/
 .flamin/.lock
 .flamin-backup-*/
+.flamin-kit-maintenance
 .claude/settings.local.json
 .cursor/hooks.json
 .env
@@ -173,7 +176,7 @@ The standard library reads TOML but has no YAML reader, so design specs are TOML
 
 ### 3.2 What the engine owns
 
-The engine is the only writer of `.flamin/*.json`. Agents never edit these files directly. (Hard where the tool has a pre-write hook: PreToolUse denies agent writes to `.flamin/*.json`. Heuristic backstop: each state file has a checksum sidecar written by the engine, and `check-phase` in the pre-commit hook fails on a mismatch. This makes tampering visible, not impossible.)
+The engine is the only writer of `.flamin/*.json`. Agents never edit these files directly. (Hard where the tool has a pre-write hook: PreToolUse denies agent writes to `.flamin/*.json`. Heuristic backstop: each state file has a checksum sidecar written by the engine, and `check-phase` in the pre-commit hook fails on a mismatch. The checksum ignores CRLF versus LF only, so a Windows checkout does not trip it; any other change still fails (D-45). This makes tampering visible, not impossible.)
 
 `state.json` example:
 
@@ -236,6 +239,7 @@ Extra commands this design adds:
 | `handoff` | Write or validate a handoff file (Section 6.6). |
 | `rebuild-locks` | Rebuild `locks.json` from inline markers. |
 | `check-staged` | Run check-lock, check-boundary and check-phase on the staged git diff. Used by the pre-commit hook and CI. |
+| `kit-maintenance on` / `off` | Human-only switch for master-kit maintenance mode (D-46). |
 
 ### 3.4 State safety
 
@@ -254,6 +258,8 @@ Every command checks state before acting. Running `module-done booking` twice re
 
 Adapters translate engine features into each tool's native features. **No business rule lives in an adapter.** Every hook calls `flamin hook <event> --tool <name>`, and every custom command calls a `flamin <verb>`.
 
+**How a deny travels (D-40).** A deny goes back as JSON in each tool's own reply schema; the exit code is secondary. Codex and Cursor get a JSON deny with exit 0, because on Windows both run hooks through PowerShell, which turns exit code 2 into 1, and Codex then treated the hook as failed and let the call through (probe B4, VERIFICATION.md §3). Claude Code gets a JSON deny plus exit 2, with the reason also on stderr (exec form, no shell).
+
 ### 4.1 Claude Code adapter
 
 - **The Orchestrator runs as the main session.** The shared `.claude/settings.json` sets `"agent": "orchestrator"`, so the main thread takes the Orchestrator's prompt, tools and model. Its `tools` list uses the main-thread-only allowlist `Agent(business, analyst, architect, planner, designer, developer, tester)`, so it can start only the seven flamin agents. (Hard.)
@@ -268,38 +274,39 @@ Adapters translate engine features into each tool's native features. **No busine
   - `SessionEnd` and `Stop`: `flamin hook sessionend --tool claude` (docs-as-memory reminder).
   - `PreCompact`: `flamin hook precompact --tool claude` (handoff reminder, Section 6.6).
 - Hook commands use **exec form** (`command` plus `args`, no shell), so Git Bash versus PowerShell on Windows does not matter: `"command": "python3"` on Linux and macOS, `"command": "python"` on Windows, with `args` starting `${CLAUDE_PROJECT_DIR}/kit/engine/flamin.py`. Paths stay relative to the project.
-- Deny replies use both a JSON `permissionDecision: "deny"` and exit code 2, because in Claude Code a hook that fails or times out does not block by itself.
+- Deny replies use both a JSON `permissionDecision: "deny"` and exit code 2, because in Claude Code a hook that fails or times out does not block by itself. The reason is also written to stderr (D-40).
 - `CLAUDE.md`: short table of contents plus the Soft rules. It points to `.flamin/` instead of copying it.
 
 ### 4.2 Codex adapter
 
-- `.codex/agents/<agent>.toml`: the seven worker agents with `name`, `description`, `developer_instructions`, `model`, `model_reasoning_effort` and `sandbox_mode` (read-only for Business, Analyst, Architect, Planner). The Orchestrator runs as the main thread, with its instructions in `AGENTS.md`. The launch gate denies any spawn of an agent named `orchestrator`. The build first checks whether Codex can set a custom agent as the main thread, and uses that if it exists (P-25).
-- `.codex/config.toml`: `[agents] max_depth = 1` and `max_threads = 10`. Hooks inline or in `.codex/hooks.json`:
+- `.codex/agents/<agent>.toml`: the seven worker agents with `name`, `description`, `developer_instructions`, `model`, `model_reasoning_effort` and `sandbox_mode = "workspace-write"` for every agent that writes, which today is all seven (D-41). Their writes are limited by the per-agent path rules, and the hook denies every shell call from an agent whose neutral tool list has no `shell` (Business, Analyst, Architect, Planner). The Orchestrator runs as the main thread, with its instructions in `AGENTS.md`. The launch gate denies any spawn of an agent named `orchestrator`. The build first checks whether Codex can set a custom agent as the main thread, and uses that if it exists (P-25).
+- `.codex/config.toml`: `[agents] max_concurrent_threads_per_session = 10` (`max_threads` is a documented legacy alias) and `max_depth = 1`. `max_depth` is no longer in the Codex docs but 0.153.4 accepts it; it stays as extra protection while `flamin doctor` confirms Codex accepts it. The Hard depth control on Codex is the engine launch gate (D-38). Hooks live only inline in this file, with TOML `command_windows`. No `.codex/hooks.json` is rendered, following the Codex advice of one representation per layer (D-39):
   - `PreToolUse` on `Bash`, `apply_patch` (matches `Edit|Write`), `collaborationspawn_agent` (spawn) and MCP tools. Matchers are regular expressions that must match the **whole** tool name (probed, §5.4): `Agent` and `spawn_agent` do not match a spawn, and broad patterns such as `.*agent.*` also catch `collaborationwait_agent`. The `apply_patch` matcher is not yet probed.
   - `SubagentStart` (second launch check: carries top-level `agent_type` and `agent_id`).
   - `PostToolUse` on the same tools.
   - `SessionEnd` and `Stop`.
-- Hook commands resolve the project root from git (as the Codex docs advise): `command` calls `./flamin hook ...` and `command_windows` calls `.\flamin.cmd hook ...`. On Windows Codex runs `command_windows`, not `command`, and runs it through PowerShell (probed, §5.4). PowerShell does not run a file from the current folder without the `.\` prefix, so a bare `flamin.cmd` fails (P-17). One shared file works on every OS.
+- Hook commands resolve the project root from git (as the Codex docs advise, because Codex runs hooks with the session's working directory): `command` calls `./flamin hook ...` and `command_windows` is `& "$(git rev-parse --show-toplevel)\flamin.cmd" hook ... ; exit $LASTEXITCODE`. This replaces D-28's `.\flamin.cmd` for Codex only (D-40). On Windows Codex 0.153.4 runs `command_windows`, not `command`, through PowerShell (probed, §5.4), so the command is PowerShell syntax. A public issue reports that Codex 0.155.0 launches hooks through `cmd.exe`; this is not verified, so `flamin doctor` proves the rendered hook runs on the installed Codex, and the heartbeat (§4.6) catches a silent failure (D-40). One shared file works on every OS.
 - `AGENTS.md`: short table of contents plus the Soft rules, rendered from `kit/rules/core.md` (P-13). Codex joins `AGENTS.md` files from the project root down to the working folder and stops at 32 KiB combined by default, so flamin keeps the file short.
 - No custom commands (P-09). Codex custom prompts are deprecated and live only in the user's home folder, so they cannot ship with a product anyway.
 - Codex does not support "ask" from `PreToolUse`. An unsupported reply marks the hook as failed and **lets the call continue**. So the Codex adapter never replies "ask". Gated actions are always denied, and the human answers the gate through the engine (Section 15.3).
 - Codex skips non-managed hooks until the human trusts them in `/hooks`. `flamin doctor` warns until trust is given.
-- **Trust is lost on every hook change (probed, §5.4).** Codex stores trust in the user's `~/.codex/config.toml`, one entry per hook, keyed by file, event and position, holding a sha256 hash of the hook. When a hook changes, its hash no longer matches and Codex **skips it without any warning**. Because the key includes the position, moving a hook should also lose its trust (inferred from the key format, not tested). So after every `flamin init`, `flamin init --tool codex` re-render or `flamin upgrade` that changes `.codex/hooks.json`, flamin tells the human to re-trust the hooks in `/hooks`. Until then the heartbeat check (§4.6) is the only signal (P-18).
+- **Trust is lost on every hook change (probed, §5.4).** Codex stores trust in the user's `~/.codex/config.toml`, one entry per hook, keyed by file, event and position, holding a sha256 hash of the hook. When a hook changes, its hash no longer matches and Codex **skips it without any warning**. Because the key includes the position, moving a hook should also lose its trust (inferred from the key format, not tested). So after every `flamin init`, `flamin init --tool codex` re-render or `flamin upgrade` that changes the hook tables in `.codex/config.toml` (D-39), flamin tells the human to re-trust the hooks in `/hooks`. Until then the heartbeat check (§4.6) is the only signal (P-18).
 - `permission_mode` in the hook input varies: `default` in an interactive session, `bypassPermissions` under `codex exec`. The engine never assumes one value.
 - Setup note for Windows: the `codex.exe` bundled in `~/.codex/.sandbox-bin` lacks `codex-code-mode-host.exe`, so tool calls fail in its terminal. The copy in `~/.codex/plugins/.plugin-appserver` includes it and works (both 0.153.4). The ChatGPT app may replace that folder on update. This is a machine setup issue, not a kit rule; the README first-run check mentions it.
 
 ### 4.3 Cursor adapter
 
-- `.cursor/agents/<agent>.md`: the seven worker agents with `name`, `description`, `model` and `readonly: true` for read-only agents. The Orchestrator runs as the main agent, with its instructions in `AGENTS.md`. `subagentStart` denies any launch of an agent named `orchestrator`, because Cursor lets a sub-agent start one more level (P-25).
+- `.cursor/agents/<agent>.md`: the seven worker agents with `name`, `description`, `model`, and no `readonly` flag on any agent that writes, which today is all seven (D-41). Cursor's `readonly` also blocks file edits and state-changing shell commands, which these agents need. The Orchestrator runs as the main agent, with its instructions in `AGENTS.md`. `subagentStart` denies any launch of an agent named `orchestrator`, because Cursor lets a sub-agent start one more level (P-25).
 - `.cursor/hooks.json` (version 1):
   - `preToolUse` with **no matcher** (every tool), with `failClosed: true`. The engine acts on `Write`, `Delete`, `Shell`, `Task` and MCP tools, and treats any unrecognised tool that carries a `file_path` as a write: it logs the call and runs the checks it can, never assuming the call is safe (P-15). Reason: the payload is only probed with one model (§5.4), and another model may use an edit tool with a different name.
-  - `beforeShellExecution` and `beforeMCPExecution` with `failClosed: true` (these two support "ask").
+  - `beforeShellExecution` and `beforeMCPExecution` with `failClosed: true` (these two support "ask"). flamin never uses their "ask" for gates: Cursor hook input has no permission-mode field, so gates always deny and send the human to the terminal (D-42).
   - `subagentStart` (phase gate on agent launch, model check, depth check).
   - `postToolUse`, `afterFileEdit`, `afterShellExecution` (audit and post-edit detection).
   - `sessionEnd` and `stop` (reminders).
 - Project hooks run from the project root. `.cursor/hooks.json` is machine-local (§2.1): `./flamin hook pretool --tool cursor` on Linux and macOS, `.\flamin.cmd hook pretool --tool cursor` on Windows. On Windows Cursor runs hook commands through **PowerShell** (probed, §5.4), so commands must be valid PowerShell: never syntax that works only in cmd or only in bash, and a `.cmd` file in the current folder needs the `.\` prefix (P-17). With `failClosed: true`, a broken command blocks loudly instead of letting calls through.
 - Several hooks on the same event run **in parallel**, with no guaranteed order (probed, §5.4). No hook may depend on another hook's result or order.
 - Every Cursor hook payload includes `user_email`. The engine removes it before storing or logging any payload (§15.2).
+- **Cursor reads the other tools' files (D-44).** Cursor also loads sub-agents from `.claude/agents/` and `.codex/agents/` (`.cursor/` wins on a name clash), and, while its Third-Party Imports setting is on (the default), Claude Code hook files such as `.claude/settings.local.json`. So Claude Code's `orchestrator` agent can appear as a Cursor sub-agent, and one tool call may reach the engine twice. The engine answers any Cursor payload (it carries `cursor_version`) in Cursor's format, whichever file sent it, and denies launches of `orchestrator`. Gate requests and audit lines are idempotent per tool call: the key is `tool_use_id`, else `generation_id` plus hook event plus a hash of the tool input. `generation_id` alone is not enough, because it changes per user message, not per tool call. Blocking stays safe, because Cursor merges hook replies so that any deny wins. Probe again once the Cursor CLI is available.
 - No `.cursor/rules/` file: Cursor reads the root `AGENTS.md` natively (P-13), so the Soft rules load once, not twice.
 - No custom commands or custom modes (P-09). Named agents can already be called with the documented `/name` syntax.
 
@@ -323,6 +330,8 @@ exec python3 "$(dirname "$0")/kit/engine/flamin.py" "$@"
 ```bat
 @python "%~dp0kit\engine\flamin.py" %*
 ```
+
+Line endings and file modes come from the root `.gitattributes` (D-45): LF for `flamin`, `kit/githooks/*` and `.flamin/**/*.json`; CRLF for `*.cmd`. Git on Windows would otherwise check files out with CRLF, which breaks `/bin/sh` for the POSIX launcher. `flamin` and the hook templates are committed as mode 100755, so a Linux or macOS clone of a kit committed from Windows can still run them (inferred risk, not tested on the Windows build machine).
 
 **Why these two commands (P-04).**
 
@@ -352,12 +361,12 @@ Checked against the full official pages on 2026-09-24. Links are in Appendix B. 
 | Session-end hook | **S** `SessionEnd` (short time budget) [C1] | **P** `SessionEnd` main thread only; 1 to 3 second limit [X1] | **P** `sessionEnd` fire-and-forget; not in cloud agents [U1] |
 | "Ask the human" from a hook | **S** `permissionDecision: "ask"` [C1] | **N** in `PreToolUse` ("ask" fails and the call continues); `PermissionRequest` can only allow or deny when Codex was already going to ask [X1] | **P** "ask" works in `beforeShellExecution` and `beforeMCPExecution`; not enforced in `preToolUse` [U1] |
 | Hook knows which agent made the call | **S** `agent_id`, `agent_type` present in tool hooks inside a sub-agent [C1] | **S** (probed, overrides the docs [X1]): tool hooks inside a sub-agent carry top-level `agent_id` and `agent_type`; main-thread calls carry neither; `session_id` is the parent's | **N** per docs: `preToolUse` carries no sub-agent id; only `subagentStart`/`subagentStop` carry the sub-agent type [U1] |
-| Sub-agent delegation | **S** `Agent` tool; sub-agents nest up to 3 layers by default; off when `Agent` is not in a sub-agent's `tools` or the depth variable is 1 [C2] | **S** explicit spawn only; `max_depth` default 1 [X2]; spawn tool is `collaborationspawn_agent`, agent name in `tool_input.agent_type` (probed) | **S** Task tool; direct sub-agents can launch one more level [U2] |
+| Sub-agent delegation | **S** `Agent` tool; sub-agents nest up to 3 layers by default; off when `Agent` is not in a sub-agent's `tools` or the depth variable is 1 [C2] | **S** explicit spawn only; `max_depth` accepted by 0.153.4 but no longer documented (D-38) [X2]; spawn tool is `collaborationspawn_agent`, agent name in `tool_input.agent_type` (probed) | **S** Task tool; direct sub-agents can launch one more level [U2] |
 | Per-agent model choice | **S** `model` field (alias or full ID) plus a per-invocation override [C2] | **S** `model`, `model_reasoning_effort` [X2] | **S** `model` field; falls back if plan or admin blocks the model [U2] |
 | Custom commands | **S** skills and slash commands; `UserPromptExpansion` covers user-typed commands. File layout to confirm at build [C1] | **P** custom prompts deprecated and home-folder only; skills replace them [X3] | **U** official page not checked; third-party sources describe `.cursor/commands/*.md` [U4]. Not needed (P-09) |
 | Project rules file | **S** `CLAUDE.md`, `.claude/rules/*.md` [C1] | **S** `AGENTS.md`, joined root to working folder, 32 KiB combined by default [X5] | **S** `.cursor/rules/*.mdc`, `AGENTS.md` [U3] |
-| Sandbox or approval modes | **S** permission modes: default, plan, acceptEdits, auto, dontAsk, bypassPermissions [C1] | **S** `sandbox_mode` per agent; sub-agents inherit the parent's sandbox and approvals [X2] | **U** shell hook input has a `sandbox` flag; modes not shown in checked pages [U1]. Not needed: `readonly: true` covers read-only agents |
-| Extra: parallel sub-agent cap | **S** `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (default 20, set to 10) [C2] | **S** `agents.max_threads` (default 6, set to 10) [X2] | **U** no documented cap found. Not needed: engine lease cap |
+| Sandbox or approval modes | **S** permission modes: default, plan, acceptEdits, auto, dontAsk, bypassPermissions [C1] | **S** `sandbox_mode` per agent; sub-agents inherit the parent's sandbox and approvals [X2] | **U** shell hook input has a `sandbox` flag; modes not shown in checked pages [U1]. Not needed: no agent is read-only (D-41) |
+| Extra: parallel sub-agent cap | **S** `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (default 20, set to 10) [C2] | **S** `agents.max_concurrent_threads_per_session`, set to 10; `max_threads` is a legacy alias (D-38) [X2] | **U** no documented cap found. Not needed: engine lease cap |
 | Extra: hook failure behaviour | Only exit 2 or JSON deny blocks; exit 1 and timeouts do not [C1] | Unsupported reply fields fail the hook and the call continues; hooks need trust review [X1]; a changed hook loses its trust and is skipped silently (probed) | Fail-open by default; `failClosed: true` blocks on failure; bad JSON blocks permission hooks [U1] |
 
 ### 5.1 Agent identity in hooks (open question kept, answered per tool)
@@ -384,7 +393,7 @@ Checked against the full official pages on 2026-09-24. Links are in Appendix B. 
 | Cursor edit tools on other models | Medium: another model may use an edit tool with another name or a partial payload | `preToolUse` with no matcher treats unknown tools with a `file_path` as writes (P-15); probe again when a plan with model choice is available |
 | Cursor model IDs | Resolved | All three IDs confirmed on their Cursor model pages (§6.4) |
 | Cursor custom commands | Low | Not needed (P-09) |
-| Cursor sandbox modes | Low | Not needed: `readonly: true` and `beforeShellExecution` cover it |
+| Cursor sandbox modes | Low | Not needed: no agent is read-only (D-41); `beforeShellExecution` covers shell |
 | Cursor parallel cap | Low | Not needed: the engine lease cap of 10 is the control (P-08) |
 
 Rule for any future Unknown: the build adds a logging-only probe hook, records the real payload in VERIFICATION.md, and keeps the fallback until the probe proves the feature.
@@ -448,7 +457,7 @@ Strength of each "may write" rule:
 
 - Caller-agnostic parts (locked files, boundaries, phase order, state files) are **Hard** on every tool with a pre-write hook.
 - Per-agent path limits are **Hard** on Claude Code and Codex, **Soft** on Cursor (Section 5.1).
-- Tool allowlists are **Hard** on Claude Code; on Codex and Cursor the read-only sandbox or `readonly` flag is **Hard** for read-only agents, and finer limits are **Soft**.
+- Tool allowlists are **Hard** on Claude Code. On Codex no agent is read-only (D-41); instead the hook denies every shell call from an agent whose neutral tool list has no `shell` (Business, Analyst, Architect, Planner), using `agent_type` (**Hard**). On Cursor the same rule is **Soft**, because Cursor hooks carry no agent identity. Finer limits are **Soft**.
 - The Tester's "no production edits" is **Hard** on Claude Code (no `Edit` tool, `Write` limited to test paths by the hook) and on Codex (the hook limits the Tester's writes to test paths using `agent_type`), **Soft** on Cursor, backed by the pre-commit check that production files changed in a Tester step only inside extension points (Heuristic).
 
 **Developer on Deep.** The Orchestrator chooses Deep for a Developer task when the task spans several aggregates, touches concurrency, or failed once on Balanced. It states the reason in the three-line preview and the engine logs it. (Soft choice, logged.)
@@ -459,8 +468,8 @@ Work flows in sequence: **Business → Analyst → Architect → Planner → Des
 
 ### 6.3 Delegation limits
 
-- **Depth 1.** Only the Orchestrator delegates. Hard on Claude Code (no `Agent` tool for sub-agents, plus spawn depth set to 1) and Codex (`max_depth = 1`). Heuristic on Cursor (Section 5.2).
-- **Up to 10 sub-agents in parallel.** Hard on Claude Code (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS = 10`) and Codex (`max_threads = 10`). On Cursor there is no documented cap, so the engine's refusal of an eleventh module lease is the control (Hard at engine level).
+- **Depth 1.** Only the Orchestrator delegates. Hard on Claude Code (no `Agent` tool for sub-agents, plus spawn depth set to 1) and Codex (the engine launch gate denies a spawn from a caller that carries `agent_type`; `max_depth = 1` is extra protection, D-38). Heuristic on Cursor (Section 5.2).
+- **Up to 10 sub-agents in parallel.** Hard on Claude Code (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS = 10`) and Codex (`max_concurrent_threads_per_session = 10`, D-38). On Cursor there is no documented cap, so the engine's refusal of an eleventh module lease is the control (Hard at engine level).
 - **One agent per module at a time.** Hard at engine level through the module lease. Heuristic at file level (Section 5.1).
 - **Target of 10 steps or fewer per agent per task, on average.** Soft. `flamin audit --stats` measures it from the audit log. No hard cap on tools used.
 
@@ -938,8 +947,9 @@ It blocks:
 - **Destructive commands:** recursive delete outside the project, force push, history rewrite of shared branches, `drop table`/`drop database`/`truncate`, wiping or moving `.flamin/` state files, disk format commands, and similar.
 - **Secret leaks:** API keys, tokens, private keys and passwords found in file content, command lines or network call arguments. Patterns cover common key prefixes, private key headers, `password=` style assignments, and long high-entropy strings next to words like "key", "token" or "secret".
 - **Agent writes to `.flamin/*.json`** (only the engine writes state).
-- **Agent writes to the enforcement layer** (P-19): `kit/`, the two launchers, `.claude/`, `.codex/`, `.cursor/`, `CLAUDE.md`, `AGENTS.md`, `.git/` and `.flamin/stacks/`. Only `flamin init`, `flamin upgrade` and an approved stack profile change write these. File-tool writes are blocked (Hard where a pre-write hook exists). Shell writes to these paths are caught by pattern (Heuristic). Backstop: `kit/MANIFEST` holds a hash of every kit file, and `check-staged` and `flamin doctor` fail on any mismatch that `flamin upgrade` did not make (Heuristic, because an edit to the engine and the manifest together could hide itself; CI on a clean runner narrows this). Reason: an agent that can edit the engine or a hook config can switch every other check off.
-- **Agent runs of human-only commands** (`flamin approve`, `cr-approve`, release approval), except through the ask path in 15.3.
+- **Agent writes to the enforcement layer** (P-19): `kit/`, the two launchers, `.gitattributes` (D-45), `.claude/`, `.codex/`, `.cursor/`, `CLAUDE.md`, `AGENTS.md`, `.git/` and `.flamin/stacks/`. Only `flamin init`, `flamin upgrade` and an approved stack profile change write these. File-tool writes are blocked (Hard where a pre-write hook exists). Shell writes to these paths are caught by pattern (Heuristic). Backstop: `kit/MANIFEST` holds a hash of every kit file, and `check-staged` and `flamin doctor` fail on any mismatch that `flamin upgrade` did not make (Heuristic, because an edit to the engine and the manifest together could hide itself; CI on a clean runner narrows this). Reason: an agent that can edit the engine or a hook config can switch every other check off. Exception: in master-kit maintenance mode this block is lifted for kit files only (D-46).
+- **Agent runs of human-only commands** (`flamin approve`, `cr-approve`, release approval, `kit-maintenance`), except through the ask path in 15.3.
+- **Shell calls from agents with no shell tool** (D-41): every shell call from Business, Analyst, Architect or Planner. Hard on Claude Code and Codex (agent identity in the hook), Soft on Cursor.
 
 It runs `check-lock`, `check-boundary` and `check-phase` on file writes and agent launches.
 
@@ -964,6 +974,7 @@ Entry: `flamin hook posttool --tool <name>` plus the engine's own commands, whic
 - `agent` is exact on Claude Code and on Codex (from the hook's `agent_type`; a call without it is the Orchestrator on the main thread, §5.1). On Cursor it comes from the module lease (Heuristic) and is marked `"agent_source":"lease"`, or `"unknown"` when no lease matches.
 - **Redaction before writing.** The same secret patterns replace matches with `[REDACTED:<kind>]`. Personal fields the tool adds to hook input, such as Cursor's `user_email`, are dropped. (Heuristic detection, Hard that the redaction step always runs before the write.)
 - Append-only, one line per write, under the same `.flamin/.lock` as state. (Hard.)
+- **One line per tool call (D-44).** When one tool call reaches the engine more than once (for example Cursor also running Claude Code hook files), the engine writes one audit line. The key is `tool_use_id`, else `generation_id` plus hook event plus a hash of the tool input. Different tool calls never share a key, so no real action is dropped (D-37).
 - `flamin audit` prints plain readable lines, for example: `08:15 codex developer DENY write modules/booking/... (locked lines 12-14)`. The stored file stays JSON Lines.
 - **Retention.** After each append, the engine deletes the oldest daily files while total size is over 1 GB, and deletes any file older than 1 year. Whichever limit hits first wins. These deletes are logged, not gated.
 - Excluded from git by default.
@@ -994,7 +1005,7 @@ Not gated but logged: engine-internal deletes (audit retention, temp files, rege
 | Tool | Path | Strength |
 |---|---|---|
 | Claude Code | The Orchestrator runs `flamin approve R-0012`. The pre-shell hook replies `ask`, so Claude Code shows its own permission prompt. The human confirms there. The engine records `approver: "human via claude prompt"`. | Hard (the tool's prompt, not the model, asks) |
-| Cursor | Same flow through `beforeShellExecution`, which supports `ask`. | Hard |
+| Cursor | Cursor hook input has no permission-mode field, so the hook always **denies** and tells the human to run `flamin approve R-0012` in a terminal (D-42). The engine records `approver: "human via terminal"`. | Hard (agent path blocked; human types the command) |
 | Codex | "ask" is not supported in `PreToolUse`. The hook **denies** and tells the human to run `flamin approve R-0012` in a terminal. The engine records `approver: "human via terminal"`. | Hard (agent path blocked; human types the command) |
 | Any tool | The human runs `flamin approve R-0012 --yes` or `--no` in a terminal. | Hard |
 
@@ -1002,9 +1013,10 @@ Rules:
 
 - Every approval and every rejection goes to the audit log with the request id.
 - **No answer means no.** A request stays pending and the gated action never runs. Pending requests show in `flamin status`.
+- A repeated hook call for the same tool call reuses its open request instead of opening a second one (D-44; same key as §15.2).
 - An approval covers only the exact command or diff shown. A changed diff needs a new request. (Hard: the engine stores a hash of what was approved.)
 - **Where gate decisions live (P-20).** Open requests, answers, approved hashes and assumption status live only in `.flamin/approvals.json`, an engine-owned top-level state file (write-blocked for agents and checksummed, §3.2). Markdown files in `.flamin/decisions/` are readable notes. The engine never reads a gate decision from a file an agent may write. Reason: the Business agent may write `assumptions.md` and the Architect may write `.flamin/decisions/`, so a status kept there could be self-approved.
-- **When the tool prompt is trusted (P-21).** The `ask` path is used only when the hook input shows an interactive permission mode. In a bypass or auto-approve mode (for example Claude Code `bypassPermissions`), in a mode the engine does not recognise, or when the mode field is missing, the hook denies and sends the human to the terminal path, as on Codex. Reason: in those modes the tool prompt may be skipped, and the agent would approve itself. Whether `ask` still reaches the human in each mode is Unknown and is probed at build.
+- **When the tool prompt is trusted (P-21).** The `ask` path is used only when the hook input shows an interactive permission mode. In a bypass or auto-approve mode (for example Claude Code `bypassPermissions`), in a mode the engine does not recognise, or when the mode field is missing, the hook denies and sends the human to the terminal path, as on Codex. Reason: in those modes the tool prompt may be skipped, and the agent would approve itself. Whether `ask` still reaches the human in each mode is Unknown and is probed at build. Claude Code `auto` mode stays on this deny path (D-43). The Claude Code docs say a hook's `ask` still prompts in auto mode, but public bug reports describe surfaces where it did not, and the hook input shows neither version nor surface. Relaxing this needs a new decision backed by a live interactive probe on each surface (terminal, VS Code extension, desktop).
 
 ### 15.4 PreInvocation (deferred)
 
@@ -1106,7 +1118,7 @@ Agents forget between sessions. `.flamin/` remembers.
 | Up to 10 parallel | Hard | Hard | Soft + engine lease cap | n/a |
 | Destructive command block | Heuristic detect, Hard block | Heuristic detect, Hard block | Heuristic detect, Hard block | n/a |
 | Secret leak block | Heuristic detect, Hard block | Heuristic detect, Hard block | Heuristic detect, Hard block | Heuristic |
-| Approval Gates | Hard (tool prompt) | Hard (terminal) | Hard (tool prompt for shell) | n/a |
+| Approval Gates | Hard (tool prompt in interactive modes; terminal otherwise, including `auto`, D-43) | Hard (terminal) | Hard (terminal, D-42) | n/a |
 | Audit log with redaction | Hard write, Heuristic redaction | Hard write, Heuristic redaction; hosted tools not seen | Hard write, Heuristic redaction | n/a |
 | State file safety | Hard | Hard | Hard | Heuristic (checksum) |
 | Enforcement layer protection (P-19) | Hard for file tools, Heuristic for shell | Hard for file tools, Heuristic for shell | Hard for `Write`, Heuristic for shell | Heuristic (manifest hash) |
@@ -1222,9 +1234,25 @@ Approved in review round 4 (2026-09-24).
 | D-36 | P-25 | On Codex and Cursor the Orchestrator is the main thread, with instructions in `AGENTS.md`, unless the build proves the tool can set a custom main agent. Only seven worker agent files are rendered. Launching an agent named `orchestrator` is denied. |
 | D-37 | P-26 | An audit line that cannot get the lock goes to a per-session spill file, merged at the next append. Audit lines are never dropped. |
 
+Approved in review round 5 (2026-09-26), from the Stage 3 build findings (VERIFICATION.md §3 and §4).
+
+| Id | Was | Decision |
+|---|---|---|
+| D-38 | K-1 | Codex uses `[agents] max_concurrent_threads_per_session = 10` (`max_threads` is a legacy alias). `max_depth = 1` stays as extra protection while `flamin doctor` confirms Codex accepts it (`codex exec --strict-config`); it is not in the Codex docs. The Hard depth control on Codex is the engine launch gate. |
+| D-39 | K-2 | Codex hooks live only inline in `.codex/config.toml`, with TOML `command_windows`: one representation per layer, as the Codex docs advise. No `.codex/hooks.json` is rendered. The D-29 re-trust notice applies to any change of the hook tables in `.codex/config.toml`. |
+| D-40 | K-3 | A deny travels as JSON in each tool's own reply schema; the exit code is secondary. Codex and Cursor: JSON deny, exit 0. Claude Code: JSON deny plus exit 2, reason also on stderr (exec form, no shell). The Codex Windows command resolves the project root from git and ends with `; exit $LASTEXITCODE`; this replaces D-28's `.\flamin.cmd` for Codex only. Cursor keeps `.\flamin.cmd`. `flamin doctor` proves the rendered Codex hook runs on the installed Codex version. |
+| D-41 | K-4 | Agents that must write get Codex `sandbox_mode = "workspace-write"` and no Cursor `readonly` flag. Their writes are limited by per-agent path rules (Hard on Claude Code and Codex, Soft plus lease on Cursor). The hook denies every shell call from an agent whose neutral tool list has no `shell` (Business, Analyst, Architect, Planner): Hard on Claude Code and Codex, Soft on Cursor. A read-only sandbox is used only for an agent with no write paths. |
+| D-42 | K-5 | Cursor gates always deny and send the human to `flamin approve <id>` in a terminal, because Cursor hook input has no permission-mode field. Strength stays Hard. |
+| D-43 | K-6 | Claude Code `auto` stays on the deny-then-terminal path. Relaxing it needs a new decision backed by a live interactive probe on each surface (terminal, VS Code extension, desktop). |
+| D-44 | K-7 | Cursor also loads `.claude/agents/`, `.codex/agents/` and, with Third-Party Imports on (the default), Claude Code hook files. The engine answers any Cursor payload in Cursor's format, denies launches of `orchestrator`, and makes gate requests and audit lines idempotent per tool call: key = `tool_use_id`, else `generation_id` + hook event + hash of the tool input. Probe again when the Cursor CLI is available. |
+| D-45 | K-8 | A root `.gitattributes` is part of the kit and of the enforcement layer: LF for `flamin`, `kit/githooks/*` and `.flamin/**/*.json`; CRLF for `*.cmd`. `flamin` and the hook templates are committed as mode 100755. `flamin init` writes `.git/hooks/pre-commit` with LF and the executable bit. State checksums ignore CRLF versus LF only. |
+| D-46 | K-9 | Master-kit maintenance mode turns on only by a human-only terminal command that writes a git-ignored flag. With the flag and no `.flamin/`, the product flow does not apply and D-30 is lifted for kit files only; kit changes must pass the engine tests and refresh `kit/MANIFEST`. `flamin init` refuses while the flag is set. `flamin doctor --kit` fails if the flag exists. "No product found" alone never enables it. The master kit keeps shipping the rendered adapters. How maintenance sessions get write tools is not decided here. |
+
 ### Proposed decisions (awaiting approval)
 
-None.
+| Id | Was | Proposal | Status |
+|---|---|---|---|
+| P-27 | K-6 (optional sub-item) | Shared `.claude/settings.json` sets `permissions.defaultMode: "default"`, so terminal sessions start in Manual and keep the in-tool prompt path. Reason: from Claude Code v2.1.283, `auto` is the built-in starting mode for interactive terminal and VS Code sessions, so under D-43 most gates would go to the terminal. The VS Code extension ignores project settings for its starting mode. | Not answered in round 5 |
 
 ## Appendix B. Doc links used for the capability matrix
 
