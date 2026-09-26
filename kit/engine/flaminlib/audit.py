@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from .secrets_scan import redact_obj
-from .statefile import StateLock, flamin_dir, lock_wait, session_id
+from .statefile import StateLock, atomic_write_bytes, flamin_dir, lock_wait, session_id
 from .util import iso, now, project_root
 
 MAX_BYTES = 1024 ** 3
@@ -45,6 +45,7 @@ def append(entry: dict, root: Path | None = None, wait: float | None = None) -> 
     root = root or project_root()
     d = audit_dir(root)
     d.mkdir(parents=True, exist_ok=True)
+    dedupe = entry.pop("dedupe", None)
     line = json.dumps(redact_obj(entry), ensure_ascii=False, sort_keys=False) + "\n"
     lock = StateLock(root)
     if not lock.try_acquire(lock_wait() if wait is None else wait):
@@ -53,12 +54,32 @@ def append(entry: dict, root: Path | None = None, wait: float | None = None) -> 
             fh.write(line)
         return "spill"
     try:
+        if dedupe and _seen(root, dedupe):
+            return "duplicate"
         merge_spills(root)
         _append_line(d, entry.get("ts") or iso(), line)
         retention(root)
     finally:
         lock.release()
     return "log"
+
+
+SEEN_MAX = 2000
+
+
+def _seen(root: Path, key: str) -> bool:
+    """Called with the lock held. True when this tool call was already logged (D-44). Keeps the last 2000 keys."""
+    f = flamin_dir(root) / "tmp" / "calls.json"
+    try:
+        keys = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        keys = []
+    if key in keys:
+        return True
+    keys = (keys + [key])[-SEEN_MAX:]
+    f.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_bytes(f, json.dumps(keys).encode())
+    return False
 
 
 def _append_line(d: Path, ts: str, line: str) -> None:

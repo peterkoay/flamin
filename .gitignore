@@ -1,0 +1,14 @@
+# flamin (DESIGN §2.7). The master kit and every product copy share these entries.
+.flamin/audit/
+.flamin/cache/
+.flamin/tmp/
+.flamin/.lock
+.flamin-backup-*/
+.flamin-kit-maintenance
+.claude/settings.local.json
+.cursor/hooks.json
+.env
+.env.*
+*.pem
+*.key
+secrets/

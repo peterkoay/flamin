@@ -2,7 +2,8 @@
 # Delegation depth 1 (only the main-thread Orchestrator starts agents) and up to 10 agents in parallel.
 [agents]
 max_depth = 1
-max_threads = 10
+# max_concurrent_threads_per_session is the documented name; max_threads is its legacy alias (D-38).
+max_concurrent_threads_per_session = 10
 
 # Hooks: every hook calls the flamin engine. Codex skips changed hooks until you trust them again in /hooks.
 

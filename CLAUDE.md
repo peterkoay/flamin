@@ -8,6 +8,8 @@ The main session runs as the flamin Orchestrator (`.claude/agents/orchestrator.m
 
 This folder uses **flamin**: a team of AI agents builds software through a fixed flow, and a small engine keeps the flow honest. The engine owns all state in `.flamin/` and all checks. Run it as `./flamin <verb>` (Linux, macOS), `.\flamin.cmd <verb>` (Windows PowerShell) or `./flamin.cmd <verb>` (Windows Git Bash).
 
+**Master kit.** If `flamin status` says "Master-kit maintenance mode is ON", this is kit maintenance, not a product: the product flow does not apply, kit files may be changed, and every kit change must pass `flamin kit-maintenance test` before it is committed. Only a human turns the mode on or off (D-46).
+
 ## Where things are
 
 - `.flamin/state.json` and the other `.flamin/*.json` files: engine state. Read with `flamin status`, never edit.

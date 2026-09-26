@@ -25,11 +25,13 @@ from .product import Product, kit_version
 from .profiles import classify, product_profiles, load_profile_dir
 from .secrets_scan import find_secrets
 from .statefile import STATE_FILES, StateLock, Store, sidecar, stale_lock
+from .policy import MAINTENANCE_FLAG, maintenance_mode
 from .util import KIT_DIR, FlaminError, iso, read_text, sha256_bytes, sha256_text, today, write_text
 
 STATE_FORMAT = json.loads((KIT_DIR / "engine" / "format.json").read_text(encoding="utf-8"))["state_format"]
 GITIGNORE = [".flamin/audit/", ".flamin/cache/", ".flamin/tmp/", ".flamin/.lock", ".flamin-backup-*/",
-             ".claude/settings.local.json", ".cursor/hooks.json", ".env", ".env.*", "*.pem", "*.key", "secrets/"]
+             ".flamin-kit-maintenance", ".claude/settings.local.json", ".cursor/hooks.json", ".env", ".env.*",
+             "*.pem", "*.key", "secrets/"]
 DOC_TEMPLATES = {
     "business/overview.md": "# Product overview\n\nPurpose, users, what \"good\" looks like. Written by the Business agent.\n",
     "business/glossary.md": "# Glossary\n",
@@ -81,6 +83,9 @@ def cmd_init(p: Product, args) -> int:
         out("  2. Git repo: created" if r.returncode == 0 else
             "  2. WARNING: no git repo and `git init` failed; the pre-commit backstop is not active.")
     # 3 + 4. state
+    if (p.root / MAINTENANCE_FLAG).exists():
+        raise FlaminError("Refused: master-kit maintenance mode is on (D-46). A human runs "
+                          "`flamin kit-maintenance off` first, or copies the master kit for a new product.")
     created = False
     if p.store.exists():
         st = p.store.load("state")
@@ -184,6 +189,11 @@ def hook_warning(p: Product) -> str | None:
 def cmd_status(p: Product, args) -> int:
     warn = hook_warning(p) if p.store.exists() else None
     if not p.store.exists():
+        if maintenance_mode(p.root):
+            out("Master-kit maintenance mode is ON (D-46). The product flow does not apply; kit files are open to "
+                "agents. Kit changes must pass `flamin kit-maintenance test` before they can be committed. "
+                "A human ends it with `flamin kit-maintenance off`.")
+            return 0
         out("No product here yet. This is a clean flamin kit.")
         out("Say \"start a new project\" (or run `flamin init`) to create one.")
         return 0
@@ -426,6 +436,8 @@ def cmd_check_staged(p: Product, args) -> int:
     paths = {c[1] for c in changes}
     # enforcement layer: kit manifest (Heuristic, D-30)
     kit_changed = [c for c in changes if mf.is_kit_path(c[1]) or c[1] == "kit/MANIFEST"]
+    if kit_changed and (root / MAINTENANCE_FLAG).exists():
+        problems += maintenance_test_check(root, new_of if "kit/MANIFEST" in paths else None)
     if kit_changed:
         mtext = new_of("kit/MANIFEST") if "kit/MANIFEST" in paths else (read_text(root / "kit" / "MANIFEST") if not rng else new_of("kit/MANIFEST"))
         want = mf.parse(mtext)
@@ -618,6 +630,8 @@ def cmd_doctor(p: Product, args) -> int:
     if (root / ".codex" / "config.toml").exists():
         notes.append("Codex: project hooks run only after you trust them in /hooks (and again after every change). "
                      "If the heartbeat warning shows in Codex, that is the cause.")
+        codex_checks(root, notes, problems, live=args.probe_codex)
+    exec_bit_check(root, problems)
     # manifest
     for pr in mf.verify_tree(root):
         problems.append("Kit integrity: " + pr)
@@ -629,6 +643,9 @@ def cmd_doctor(p: Product, args) -> int:
         problems.append("Portability: " + pr)
     if args.kit:
         problems += kit_cleanliness(root)
+        if (root / MAINTENANCE_FLAG).exists():
+            problems.append("Master kit: the kit-maintenance flag is set (D-46). A shipped kit never carries it; "
+                            "a human runs `flamin kit-maintenance off`.")
     if args.update_manifest:
         write_text(root / "kit" / "MANIFEST", mf.build(root))
         notes.append("kit/MANIFEST rewritten from the current kit files.")
@@ -737,3 +754,169 @@ def _migrate(p: Product, src: Path, cur: int, new: int) -> int:
     fn(p)
     out(f"Migrated. Backup kept in {backup.name}/.")
     return 0
+
+
+# ====================================================================== Codex checks (D-38, D-40)
+
+CODEX_AGENT_KEYS = ("max_depth", "max_concurrent_threads_per_session")
+PROBE_COMMAND = "git push --force origin main"  # destructive by flamin's rules, so a working hook must deny it
+
+
+def codex_checks(root: Path, notes: list, problems: list, live: bool = False) -> None:
+    import tomllib
+
+    codex = shutil.which("codex")
+    if not codex:
+        notes.append("Codex is not installed here; Codex checks skipped.")
+        return
+    try:
+        cfg = tomllib.loads(read_text(root / ".codex" / "config.toml") or "")
+    except tomllib.TOMLDecodeError as exc:
+        problems.append(f"Codex: .codex/config.toml is not valid TOML ({exc})")
+        return
+    agents = cfg.get("agents", {})
+    # D-38: does this Codex accept the [agents] keys? --strict-config fails fast on an unknown key. A local (--oss)
+    # provider that is not running stops the run right after the config loads, so no model is called.
+    for key in CODEX_AGENT_KEYS:
+        if key not in agents:
+            problems.append(f"Codex: [agents] {key} is missing from .codex/config.toml. Run `flamin init --tool codex`.")
+            continue
+        r = subprocess.run([codex, "exec", "--strict-config", "-c", f"agents.{key}={agents[key]}", "--skip-git-repo-check",
+                            "-s", "read-only", "--oss", "--local-provider", "ollama", "flamin config check"],
+                           cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           stdin=subprocess.DEVNULL, timeout=120)
+        text = r.stdout + r.stderr
+        if "Error loading config" in text or "unknown configuration field" in text:
+            last = text.strip().splitlines()[-1][:160] if text.strip() else ""
+            problems.append(f"Codex: this Codex rejects [agents] {key} ({last}). "
+                            "The engine launch gate still enforces depth 1 (D-38).")
+        else:
+            notes.append(f"Codex accepts [agents] {key} = {agents[key]}")
+    # D-40: does the rendered hook command run, in the shell Codex uses on this OS, and deny?
+    hooks = cfg.get("hooks", {}).get("PreToolUse", [])
+    try:
+        handler = hooks[0]["hooks"][0]
+    except (IndexError, KeyError, TypeError):
+        problems.append("Codex: no PreToolUse hook in .codex/config.toml. Run `flamin init --tool codex`.")
+        return
+    payload = json.dumps({"hook_event_name": "PreToolUse", "session_id": "flamin-doctor", "permission_mode": "default",
+                          "tool_name": "Bash", "tool_input": {"command": PROBE_COMMAND}})
+    if os.name == "nt":
+        shell_cmd = ["powershell.exe", "-NoProfile", "-Command", handler.get("command_windows", "")]
+    else:
+        shell_cmd = ["sh", "-c", handler.get("command", "")]
+    r = subprocess.run(shell_cmd, cwd=str(root), input=payload, capture_output=True, text=True, timeout=60)
+    try:
+        reply = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
+        decision = reply.get("hookSpecificOutput", {}).get("permissionDecision")
+    except ValueError:
+        decision = None
+    if r.returncode == 0 and decision == "deny":
+        notes.append("Codex: the rendered hook command runs in this OS's hook shell and denies a destructive command "
+                     "(JSON deny, exit 0).")
+    else:
+        problems.append(f"Codex: the rendered hook command did not deny a destructive command when run the way Codex "
+                        f"runs it (exit {r.returncode}, decision {decision}). {r.stderr.strip()[:200]}")
+    if live:
+        codex_live_probe(root, codex, notes, problems)
+    else:
+        notes.append("Codex: `flamin doctor --probe-codex` proves the hooks inside the installed Codex (one model call).")
+
+
+def codex_live_probe(root: Path, codex: str, notes: list, problems: list) -> None:
+    """Run one harmless Codex command and check the flamin hook heartbeat moved (D-40). Uses the real trust state."""
+    beat = root / ".flamin" / "tmp" / "heartbeat-codex"
+    if not (root / ".flamin").exists():
+        notes.append("Codex live probe skipped: no product state here (the heartbeat lives in .flamin/).")
+        return
+    before = beat.stat().st_mtime if beat.exists() else 0
+    r = subprocess.run([codex, "exec", "--skip-git-repo-check", "-s", "read-only", "-C", str(root),
+                        "Run exactly this shell command and nothing else: git status --short"],
+                       cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       stdin=subprocess.DEVNULL, timeout=600)
+    after = beat.stat().st_mtime if beat.exists() else 0
+    version = subprocess.run([codex, "--version"], capture_output=True, text=True).stdout.strip()
+    if after > before:
+        notes.append(f"Codex live probe: flamin hooks ran inside {version}.")
+    else:
+        problems.append(f"Codex live probe: no flamin hook ran inside {version} (exit {r.returncode}). Trust the hooks "
+                        "in /hooks and trust the project, then run `flamin doctor --probe-codex` again.")
+
+
+# ====================================================================== executable bits (D-45)
+
+EXEC_FILES = ("flamin", "kit/githooks/pre-commit.posix", "kit/githooks/pre-commit.windows")
+
+
+def exec_bit_check(root: Path, problems: list) -> None:
+    if not gitops.is_repo(root):
+        return
+    out_ = gitops.git(root, "ls-files", "-s", *EXEC_FILES, check=False)
+    modes = {line.split("\t")[-1]: line.split()[0] for line in out_.splitlines() if "\t" in line}
+    for f in EXEC_FILES:
+        if f in modes and modes[f] != "100755":
+            problems.append(f"{f} is committed without the executable bit (mode {modes[f]}). "
+                            f"Run `git update-index --chmod=+x {f}` (D-45).")
+
+
+# ====================================================================== master-kit maintenance mode (D-46)
+
+def _flag(root: Path) -> dict:
+    try:
+        return json.loads((root / MAINTENANCE_FLAG).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def cmd_kit_maintenance(p: Product, args) -> int:
+    root = p.root
+    flag = root / MAINTENANCE_FLAG
+    if args.action == "status":
+        out("Master-kit maintenance mode: " + ("ON" if maintenance_mode(root) else "off"))
+        return 0
+    if args.action == "on":
+        if (root / ".flamin").exists():
+            raise FlaminError("Refused: this folder holds a product. Maintenance mode is for the master kit only (D-46).")
+        if flag.exists():
+            out("No change needed: master-kit maintenance mode is already on.")
+            return 0
+        write_text(flag, json.dumps({"on": iso(), "tested_manifest": None}) + "\n")
+        ensure_gitignore(root)
+        out("Master-kit maintenance mode is ON. Kit files are open to agents; `flamin init` is refused. "
+            "Before committing kit changes run `flamin kit-maintenance test`. End with `flamin kit-maintenance off`.")
+        return 0
+    if args.action == "off":
+        if not flag.exists():
+            out("No change needed: master-kit maintenance mode is already off.")
+            return 0
+        flag.unlink()
+        out("Master-kit maintenance mode is off.")
+        return 0
+    if not flag.exists():
+        raise FlaminError("`flamin kit-maintenance test` runs only in maintenance mode (a human runs "
+                          "`flamin kit-maintenance on`).")
+    tests = KIT_DIR / "engine" / "tests"
+    r = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", str(tests), "-t", str(tests)],
+                       cwd=str(root), capture_output=True, text=True)
+    for line in (r.stdout + r.stderr).strip().splitlines()[-3:]:
+        out("  " + line)
+    if r.returncode != 0:
+        raise FlaminError("Engine tests failed; kit/MANIFEST was not refreshed. Fix the kit and run the tests again.")
+    text = mf.build(root)
+    write_text(root / "kit" / "MANIFEST", text)
+    data = _flag(root)
+    data["tested_manifest"] = sha256_text(text)
+    data["tested_at"] = iso()
+    write_text(flag, json.dumps(data) + "\n")
+    out("Engine tests passed. kit/MANIFEST refreshed and recorded as tested.")
+    return 0
+
+
+def maintenance_test_check(root: Path, new_of) -> list[str]:
+    """In maintenance mode, staged kit changes must match the last tested manifest (D-46)."""
+    want = _flag(root).get("tested_manifest")
+    manifest = new_of("kit/MANIFEST") if new_of else read_text(root / "kit" / "MANIFEST")
+    if not want or sha256_text((manifest or "").replace("\r\n", "\n")) != want:
+        return ["Kit changes in maintenance mode must pass the engine tests first: run `flamin kit-maintenance test`, "
+                "then stage kit/MANIFEST (D-46)."]
+    return []

@@ -34,3 +34,28 @@ Name check (forbidden-name pattern from the build task, over file contents and n
 - Not changed: `docs/DESIGN.md` and the three read-only guides
 - Must read: `docs/DESIGN.md`, `docs/VERIFICATION.md` §4 (clashes), `kit/engine/flaminlib/hooks.py` (every tool's reply format), `kit/engine/flaminlib/render.py` (adapters)
 - Tests: `python -B -m unittest discover -s kit/engine/tests -t kit/engine/tests`
+
+---
+
+## Build handoff 2 (2026-09-26)
+
+## Objective
+Align the build with review round 5 (DESIGN.md D-38 to D-46). Done means every decision is implemented or confirmed, tested, recorded in VERIFICATION.md §4a, and the master kit is clean.
+
+## State Ledger
+- Completed: D-38 Codex `[agents]` keys and the `--strict-config` doctor check
+- Completed: D-40 Cursor launcher, doctor hook-shell check, `doctor --probe-codex`
+- Completed: D-41 shell denied for agents without a shell tool
+- Completed: D-44 one audit line and one gate answer per tool call
+- Completed: D-45 `.gitattributes` in the enforcement layer, executable bits, master-kit `.gitignore`
+- Completed: D-46 `flamin kit-maintenance`, init refusal, doctor --kit failure, tested-manifest check at commit
+- Completed: D-39, D-42, D-43 confirmed (no change needed)
+- Completed: 121 unit tests OK; `flamin doctor --kit` clean; live Codex gates re-run
+- Current: waiting for the human to review and commit
+- Pending: how maintenance sessions get file-editing tools (open in D-46); P-27 (not answered); Linux and macOS CI; live Cursor probes
+- Decisions: none new; DESIGN.md changed only in the human's review round
+- Open questions: `.codex/agents/orchestrator.toml` appeared outside the build; keep or delete (D-36 says seven workers only)
+
+## Artifact References
+- Changed: `kit/engine/flaminlib/{audit,cli,cmds,hooks,policy,render}.py`, `kit/engine/tests/test_round5.py`, `kit/adapters/codex/config.toml`, `kit/rules/core.md`, `kit/githooks/*` (mode), `kit/MANIFEST`, `.gitattributes`, `.gitignore` (new), `.codex/config.toml`, `CLAUDE.md`, `AGENTS.md`, `docs/README.md`, `docs/WORKFLOW.md`, `docs/VERIFICATION.md`, `docs/BUILD_LOG.md`
+- Must read: `docs/DESIGN.md` Appendix A (D-38 to D-46), `docs/VERIFICATION.md` §4a

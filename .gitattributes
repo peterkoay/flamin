@@ -7,5 +7,5 @@ kit/githooks/* text eol=lf
 # The Windows launcher keeps CRLF.
 *.cmd text eol=crlf
 # Engine state is checksummed byte for byte; keep it LF everywhere.
-.flamin/*.json text eol=lf
+.flamin/**/*.json text eol=lf
 .flamin/*.sha256 text eol=lf

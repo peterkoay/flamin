@@ -50,6 +50,7 @@ class Call:
     model: str | None = None
     raw: dict = field(default_factory=dict)
     extra_writes: list = field(default_factory=list)  # more (path, new) pairs, e.g. one patch with many files
+    call_key: str = ""          # one key per tool call, whichever hook file sent it (D-44)
 
 
 @dataclass
@@ -118,6 +119,7 @@ def heartbeats(root: Path) -> dict[str, float]:
 
 def normalize(tool: str, native: str, payload: dict, p: Product) -> Call:
     c = Call(tool=tool, event=native, raw=payload, session=os.environ.get("FLAMIN_SESSION", ""))
+    c.call_key = call_key(native, payload)
     c.mode = payload.get("permission_mode")
     c.model = payload.get("model") or payload.get("subagent_model")
     ti = payload.get("tool_input")
@@ -177,6 +179,18 @@ def normalize(tool: str, native: str, payload: dict, p: Product) -> Call:
     if tool == "cursor" and c.agent is None:
         c.agent, c.agent_source = _lease_agent(p, c.path)
     return c
+
+
+def call_key(native: str, payload: dict) -> str:
+    """D-44: tool_use_id, else generation_id + hook event + a hash of the tool input."""
+    tid = payload.get("tool_use_id")
+    if tid:
+        return f"{native}:{tid}"
+    gid = payload.get("generation_id")
+    if gid:
+        ti = payload.get("tool_input") if payload.get("tool_input") is not None else payload.get("command", "")
+        return f"{native}:{gid}:" + sha256_text(json.dumps(ti, sort_keys=True, default=str))[:16]
+    return ""
 
 
 def _set_path(c: Call, p: Product, path) -> None:
@@ -322,7 +336,7 @@ def check_write(p: Product, c: Call, relpath: str | None, new: str | None, have_
         return Decision("allow", "outside the project")
     if pol.is_state_path(relpath):
         return Decision("deny", f"{relpath} is engine state. Only the flamin engine writes it; use a `flamin <verb>` command.")
-    if pol.is_enforcement_path(relpath):
+    if pol.is_enforcement_path(relpath) and not (pol.maintenance_mode(p.root) and pol.is_kit_file(relpath)):
         return Decision("deny", f"{relpath} is part of the enforcement layer (kit, launchers, tool config, rules files, "
                         ".git, .flamin/stacks). Agents may not change it; only `flamin init`, `flamin upgrade` or an "
                         "approved stack profile change write it.")
@@ -411,6 +425,9 @@ def _deps(relpath: str, text: str | None) -> frozenset:
 
 def check_shell(p: Product, c: Call) -> Decision:
     cmd = c.command or ""
+    if c.agent and c.agent_source == "hook" and c.agent in WORKERS and not pol.agent_has_shell(c.agent):
+        return Decision("deny", f"The {c.agent} agent has no shell tool (D-41). Every shell call from it is denied; "
+                        "report back to the Orchestrator instead.")
     what = pol.human_only(cmd)
     if what:
         args = pol.normalize_flamin_args(cmd) or ""
@@ -432,7 +449,8 @@ def check_shell(p: Product, c: Call) -> Decision:
         rp = rel(target, p.root)
         if not _inside(rp):
             continue
-        if pol.is_state_path(rp) or pol.is_enforcement_path(rp):
+        if pol.is_state_path(rp) or (pol.is_enforcement_path(rp)
+                                     and not (pol.maintenance_mode(p.root) and pol.is_kit_file(rp))):
             return Decision("deny", f"Shell write to {rp} blocked: engine state and the enforcement layer are "
                             "written only by flamin itself.")
         if rp in locks or lk.level_of(read_text(p.root / rp)):
@@ -460,9 +478,14 @@ def gate(p: Product, c: Call, kind: str, payload: str, title: str) -> Decision:
                         "approval. Run `flamin init` first.")
     full_payload = f"{kind}\n{payload}"
     with p.tx() as (state, appr):
+        if c.call_key:  # the same tool call arriving twice (D-44) keeps the answer it already got
+            for req in appr["requests"].values():
+                if req.get("consumed_key") == c.call_key and req["payload_hash"] == sha256_text(full_payload):
+                    return Decision("allow", f"approved by {req['approver']} ({req['id']})", request=req["id"])
         done = ap.approved_unused(appr, "action", full_payload)
         if done:
             done["consumed"] = iso()
+            done["consumed_key"] = c.call_key
             return Decision("allow", f"approved by {done['approver']} ({done['id']})", request=done["id"])
         asking = _can_ask(c)
         req = ap.open_request(p.store, state, appr, "action", title, full_payload,
@@ -632,6 +655,8 @@ def _safe_log(p: Product, c: Call, d: Decision, action: str | None = None) -> No
             extra["permission_mode"] = c.mode
         if d.request:
             extra["request"] = d.request
+        if c.call_key:
+            extra["dedupe"] = f"{c.call_key}:{action or c.kind}"  # one audit line per tool call (D-44)
         p.agent = c.agent
         p.log(action or c.kind, target=target, decision=d.decision, reason=d.reason, **extra)
     except Exception:  # noqa: BLE001 - logging must never break a hook

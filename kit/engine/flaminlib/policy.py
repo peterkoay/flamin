@@ -15,13 +15,31 @@ from .util import KIT_DIR, any_glob, glob_match
 STATE_PATHS = [".flamin/*.json", ".flamin/*.json.sha256", ".flamin/.lock", ".flamin/tmp/**",
                ".flamin/audit/**", ".flamin/cache/**"]
 # Enforcement layer (P-19 / D-30).
-ENFORCEMENT_PATHS = ["kit/**", "flamin", "flamin.cmd", ".claude/**", ".codex/**", ".cursor/**",
+ENFORCEMENT_PATHS = ["kit/**", "flamin", "flamin.cmd", ".gitattributes", ".claude/**", ".codex/**", ".cursor/**",
                      "CLAUDE.md", "AGENTS.md", ".git/**", ".flamin/stacks/**"]
 SECRET_FILES = [".env", ".env.*", "**/.env", "**/.env.*", "**/*.pem", "*.pem", "**/*.key", "*.key",
                 "secrets/**", "**/secrets/**", "**/credentials*", "credentials*", "**/*.p12", "**/*.keystore"]
 DEPENDENCY_FILES = ["package.json", "requirements.txt", "requirements-*.txt", "pyproject.toml", "pom.xml",
                     "build.gradle", "build.gradle.kts", "go.mod", "Cargo.toml", "Gemfile", "Podfile",
                     "*.csproj", "Pipfile", "setup.py", "setup.cfg"]
+
+
+# Kit files that master-kit maintenance mode opens for agents (D-46). Tool config, rules files and .git stay shut.
+KIT_FILE_PATHS = ["kit/**", "flamin", "flamin.cmd"]
+MAINTENANCE_FLAG = ".flamin-kit-maintenance"
+
+
+def is_kit_file(p: str) -> bool:
+    return any_glob(p, KIT_FILE_PATHS)
+
+
+def maintenance_mode(root) -> bool:
+    """Master-kit maintenance mode: the human-set flag and no product state (D-46)."""
+    return (root / MAINTENANCE_FLAG).exists() and not (root / ".flamin").exists()
+
+
+def agent_has_shell(agent: str) -> bool:
+    return "shell" in agent_defs().get(agent, {}).get("tools", [])
 
 
 def is_state_path(p: str) -> bool:
@@ -109,6 +127,8 @@ HUMAN_ONLY = [
     (re.compile(FLAMIN_CMD + r"approve\b"), "approve"),
     (re.compile(FLAMIN_CMD + r"upgrade\b"), "upgrade"),
     (re.compile(FLAMIN_CMD + r"doctor\b[^\n;&|]*--clear-stale-lock"), "clear-stale-lock"),
+    (re.compile(FLAMIN_CMD + r"doctor\b[^\n;&|]*--update-manifest"), "update-manifest"),
+    (re.compile(FLAMIN_CMD + r"kit-maintenance\s+(?:on|off)\b"), "kit-maintenance switch"),
     (re.compile(FLAMIN_CMD + r"[\w-]+\b[^\n;&|]*\s--(?:yes|no)\b"), "gate answer"),
 ]
 

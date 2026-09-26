@@ -174,7 +174,8 @@ def claude_local() -> dict[str, str]:
 
 def cursor_local() -> dict[str, str]:
     # Cursor runs project hooks from the project root, through PowerShell on Windows (probed): `.\flamin.cmd` (D-28).
-    launcher, tail = (".\\flamin.cmd", "; exit $LASTEXITCODE") if os.name == "nt" else ("./flamin", "")
+    # Cursor keeps `.\flamin.cmd` (D-28, D-40). Its reply is JSON with exit 0, so no exit-code passthrough is needed.
+    launcher, tail = (".\\flamin.cmd", "") if os.name == "nt" else ("./flamin", "")
 
     def h(event: str, fail_closed: bool = False) -> dict:
         d = {"command": f"{launcher} hook {event} --tool cursor{tail}", "timeout": 30}

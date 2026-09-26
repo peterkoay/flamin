@@ -2,7 +2,7 @@
 
 flamin is a kit for building software with a team of AI agents. You talk to it in plain language. Eight agents do the work in a fixed order, and a small engine keeps the line honest: it knows which step the product is on, which files are locked, and which actions need your "yes".
 
-- **Design:** [DESIGN.md](DESIGN.md) (approved, decisions D-01 to D-37). It says, for every rule, whether it is Hard, Soft or Heuristic.
+- **Design:** [DESIGN.md](DESIGN.md) (approved, decisions D-01 to D-46). It says, for every rule, whether it is Hard, Soft or Heuristic.
 - **Day-to-day flow:** [WORKFLOW.md](WORKFLOW.md).
 - **What was tested and how:** [VERIFICATION.md](VERIFICATION.md).
 - **Build handoffs:** [BUILD_LOG.md](BUILD_LOG.md).
@@ -24,7 +24,7 @@ On Windows, if `python` opens the Microsoft Store, install Python from python.or
 flamin doctor          # Linux, macOS: ./flamin doctor    Windows PowerShell: .\flamin.cmd doctor
 ```
 
-`flamin doctor` lists anything that blocks the kit on this machine: the Python command, git, the hooks path, stale locks, adapter files, untrusted hooks, kit integrity and absolute paths.
+`flamin doctor` lists anything that blocks the kit on this machine: the Python command, git, the hooks path, stale locks, adapter files, untrusted hooks, kit integrity, absolute paths and executable bits. Where Codex is installed it also checks that Codex accepts the `[agents]` keys and that the rendered Codex hook denies a destructive command in the shell Codex uses. `flamin doctor --probe-codex` goes one step further and proves the hooks run inside the installed Codex (one model call; the project and its hooks must be trusted).
 
 ## Start a product
 
@@ -39,7 +39,7 @@ This folder is the **master kit**. It never hosts a real product (`flamin doctor
 ### Per tool, once per machine
 
 - **Claude Code:** trust the workspace when asked. The main session runs as the flamin Orchestrator (`.claude/settings.json` sets `"agent": "orchestrator"`). Hooks live in the machine-local `.claude/settings.local.json`.
-- **Codex:** trust the project, then open `/hooks` and trust the flamin hooks. Codex skips a changed hook silently until it is trusted again, so do this after every `flamin init`, re-render or `flamin upgrade` that changes the hooks in `.codex/config.toml`. On Windows, if tool calls fail inside the `codex.exe` bundled in `~/.codex/.sandbox-bin`, use the copy in `~/.codex/plugins/.plugin-appserver` (a machine setup issue, not a kit rule).
+- **Codex:** trust the project, then open `/hooks` and trust the flamin hooks. Codex skips a changed hook silently until it is trusted again, so do this after every `flamin init`, re-render or `flamin upgrade` that changes the hook tables in `.codex/config.toml` (the only place Codex hooks live, D-39). Then run `flamin doctor --probe-codex`. On Windows, if tool calls fail inside the `codex.exe` bundled in `~/.codex/.sandbox-bin`, use the copy in `~/.codex/plugins/.plugin-appserver` (a machine setup issue, not a kit rule).
 - **Cursor:** trust the workspace. Hooks live in the machine-local `.cursor/hooks.json` (with `failClosed: true`). Cursor reads the root `AGENTS.md`.
 
 A teammate who clones a product has no hooks until they run `flamin init` on their machine. The first `flamin status` of a session says so loudly.
@@ -75,6 +75,7 @@ flamin approve A-003 --yes       # agree to an assumption
 | `upgrade --from <newer kit>` | Replace kit files only; never touches `.flamin/` |
 | `check-lock`, `check-boundary`, `check-phase`, `check-staged` | The checks, also used by the pre-commit hook and CI |
 | `hook`, `handoff`, `rebuild-locks` | Tool hook entry point, handoff write and validation, lock cache rebuild |
+| `kit-maintenance on/off/test/status` | Master-kit maintenance mode (on and off are human-only) |
 
 ## Stack profiles
 
@@ -98,6 +99,18 @@ python -B -m unittest discover -s kit/engine/tests -t kit/engine/tests
 ## Continuous integration
 
 `kit/ci/flamin-check.yml` is a sample GitHub Actions workflow. Copy it to `.github/workflows/` in a product. It runs the engine tests and `flamin check-staged --range <base>..<head>` on Linux, macOS and Windows runners.
+
+## Maintaining the master kit (D-46)
+
+The master kit ships the rendered adapters, so opening it in Claude Code makes the session the flamin Orchestrator, which cannot edit files. To change the kit:
+
+```
+flamin kit-maintenance on       # a human, in a terminal; refused where a product lives
+flamin kit-maintenance test     # after the change: runs the engine tests, refreshes kit/MANIFEST, records the pass
+flamin kit-maintenance off      # a human, in a terminal
+```
+
+While the mode is on, kit files (`kit/`, the launchers) are open to agents; tool config, rules files and `.git/` stay shut. The pre-commit check refuses kit changes that did not pass `flamin kit-maintenance test`. `flamin init` is refused and `flamin doctor --kit` fails until the mode is off, so a shipped kit never carries the flag. How a maintenance session gets file-editing tools is not decided yet (DESIGN D-46); today a human edits, or grants the session shell access.
 
 ## Future option (not built)
 

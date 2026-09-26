@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--fix", action="store_true", help="re-render machine-local adapter files")
     sp.add_argument("--tool", choices=["claude", "codex", "cursor", "all"], default=None)
     sp.add_argument("--update-manifest", action="store_true", help="kit maintainers: rewrite kit/MANIFEST")
+    sp.add_argument("--probe-codex", action="store_true", help="prove the hooks inside the installed Codex (one model call)")
     add("resume", "Show the last completed step and the next step", cmds.cmd_resume)
 
     sp = add("intake", "Step 0: record intake answers, report missing items, open the stack gate", flow.cmd_intake)
@@ -116,6 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--validate", metavar="FILE")
     sp.add_argument("--stdin", action="store_true", help="write the handoff from stdin (validated first)")
     add("rebuild-locks", "Rebuild locks.json from inline markers", cmds.cmd_rebuild_locks)
+    sp = add("kit-maintenance", "Master-kit maintenance mode: on/off (human only), test, status", cmds.cmd_kit_maintenance)
+    sp.add_argument("action", choices=["on", "off", "test", "status"])
     return ap
 
 

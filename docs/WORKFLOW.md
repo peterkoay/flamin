@@ -86,7 +86,7 @@ Rules the hooks enforce while agents work:
 | Tool | What happens |
 |---|---|
 | Claude Code, interactive mode (default, acceptEdits, plan) | The hook answers "ask", and Claude Code's own prompt asks you. |
-| Claude Code in bypass, dontAsk, auto or an unknown mode; Codex; Cursor | The hook denies and prints a request id. You run `flamin approve R-0012 --yes` in a terminal, then tell the agent to retry the exact same action. |
+| Claude Code in bypass, dontAsk, auto (D-43) or an unknown mode; Codex; Cursor (D-42) | The hook denies and prints a request id. You run `flamin approve R-0012 --yes` in a terminal, then tell the agent to retry the exact same action. |
 
 Gated: production release, app store submission, database migrations, deleting files, external or paid API calls, secret or credential changes, baseline amend, new stack profile, new dependencies, CR list approval, stack choice, assumption agreement. An approval covers only the exact command or diff shown.
 

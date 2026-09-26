@@ -17,7 +17,7 @@ All test products lived in temporary folders outside the kit and were deleted af
 
 ## 1. Engine unit tests
 
-`python -B -m unittest discover -s kit/engine/tests -t kit/engine/tests` → **Ran 111 tests, OK**.
+`python -B -m unittest discover -s kit/engine/tests -t kit/engine/tests` → **Ran 121 tests, OK** (111 from the first build, 10 added for review round 5 in `test_round5.py`).
 
 Every check has unit tests: state lock, atomic writes, checksums (including CRLF checkouts), audit redaction, spill and retention, secret patterns, lock levels (Python and TypeScript markers, CRLF, regeneration bypass, broken markers), module and layer boundaries (Python, TypeScript relative imports, Java packages, no-layers profile), phase and step order, the launch gate, destructive, human-only and gated shell patterns, Codex patch parsing, the generator (determinism, body carry-over, orphans, Step 7 completion), lint (roles, transient fields, extension point names, secret outputs, drift), every shipped profile generating, the pre-commit backstop through a real `git commit`, the kit manifest, `doctor --kit`, adapter rendering, upgrade and the migration gate, and every tool's hook reply format.
 
@@ -96,9 +96,9 @@ New probes run during the build, in throwaway folders. Each recorded its input a
 - Boundary checks read import lines. They cannot see reflection or dynamic paths.
 - Agent identity on Cursor comes from the module lease (Heuristic).
 
-## 4. Design versus reality (reported, not changed)
+## 4. Design versus reality (resolved in review round 5)
 
-DESIGN.md was not edited. These are the places where the build found reality different from the text. Each needs a decision in a new review round (next decision number: D-38).
+The build did not edit DESIGN.md. It reported the items below; the human decided them in review round 5 as D-38 to D-46 (DESIGN.md Appendix A). The table is kept as the record of what the build found. §4a shows how the build was aligned.
 
 | Id | DESIGN says | Reality | What the build does now |
 |---|---|---|---|
@@ -113,6 +113,23 @@ DESIGN.md was not edited. These are the places where the build found reality dif
 | K-9 | DESIGN is silent | Opening the master kit folder itself in Claude Code applies its `.claude/settings.json`: the main session becomes the Orchestrator and the built-in agents are denied. | As designed for products. Kit maintainers edit the kit in another tool or accept this. |
 
 Small build choices inside the design (no decision needed): `flamin handoff --stdin`, because the Orchestrator has no file-write tool on Claude Code; stack approval runs through `flamin intake --stack`, which also serves a change to the product's profile copy; `flamin doctor --kit --update-manifest` rewrites `kit/MANIFEST` for kit maintainers (human-only through the hook).
+
+## 4a. Alignment with D-38 to D-46 (2026-09-26)
+
+| Decision | What changed in the build | How it was checked | Result |
+|---|---|---|---|
+| D-38 | `.codex/config.toml` uses `max_concurrent_threads_per_session = 10` (plus `max_depth = 1`). `flamin doctor` checks both keys with `codex exec --strict-config`; a local `--oss` provider that is not running stops the run after the config loads, so no model is called. | `flamin doctor --kit` on this machine; unit test of the rendered keys | Codex 0.153.4 accepts both keys. An unknown key under `[agents]` is rejected (seen in the build probe). |
+| D-39 | No change needed: hooks were already inline only. The re-trust notice points at `.codex/config.toml`. | Unit test | Pass |
+| D-40 | Cursor's Windows command is back to plain `.\flamin.cmd` (JSON with exit 0 decides). `flamin doctor` runs the rendered Codex hook in the shell Codex uses (PowerShell on Windows) with a force-push payload and requires a JSON deny with exit 0. `flamin doctor --probe-codex` runs one harmless command inside the installed Codex and checks the hook heartbeat moved. | `flamin doctor --kit`; `flamin doctor --probe-codex` in a fresh, untrusted product copy | The shell check passes. The live probe correctly reported "no flamin hook ran inside codex-cli 0.153.4" for the untrusted copy, with the fix (trust the project and hooks). With trust bypassed for one run, Codex blocked the force push, the `apply_patch` to `kit/rules/core.md` and the delete (gate R-0001). |
+| D-41 | The hook denies every shell call from Business, Analyst, Architect and Planner (Claude Code and Codex, from the agent identity in the hook). Soft on Cursor, which sends no identity. | Unit tests for all seven agents and the main session, on both tools | Pass |
+| D-42, D-43 | No change needed: Cursor gates and Claude Code `auto` already deny and send the human to the terminal. | Existing unit tests | Pass |
+| D-44 | Each tool call has one key: `tool_use_id`, else `generation_id` + hook event + a hash of the tool input. The audit log writes one line per key (the last 2000 keys are kept in `.flamin/tmp/calls.json`, under the state lock). A repeated call reuses its open gate request, and an approved action stays allowed when the same call arrives again; a new call needs a new answer. | Unit tests: a Cursor payload sent through the Cursor and the Claude Code hook files; the approval repeat | Pass. The live Codex run now writes one audit line per blocked call (the first build wrote two for some calls). |
+| D-45 | `.gitattributes` joined the enforcement layer; its state rule is `.flamin/**/*.json`. `kit/githooks/*` are committed as mode 100755. `flamin doctor` flags a launcher or hook template without the executable bit. The master kit now has its own `.gitignore` (the DESIGN §2.7 entries). | Unit tests; `git ls-files -s` | Pass |
+| D-46 | New `flamin kit-maintenance on/off/test/status`. On and off are human-only through the hook (as is `flamin doctor --update-manifest`). With the flag and no `.flamin/`, agents may write `kit/` and the launchers; tool config, rules files, `.gitattributes` and `.git/` stay shut. `flamin init` refuses and `flamin doctor --kit` fails while the flag exists. `flamin kit-maintenance test` runs the engine tests, refreshes `kit/MANIFEST` and records it; `check-staged` refuses kit changes in maintenance mode unless the staged manifest is the tested one. | Unit tests | Pass |
+
+Not done, because DESIGN.md leaves it open: how a maintenance session gets file-editing tools (D-46), and P-27 (not answered in round 5).
+
+Noted during alignment: `.codex/config.toml` had been rewritten outside the build (a `[shell_environment_policy]` block with two Claude Code variables, which Codex does not read); the re-render replaced it. `.codex/agents/orchestrator.toml` had also appeared; D-36 renders only the seven workers, so it was left untouched and not committed. `flamin doctor` in a product writes one audit line for its own hook self-check (session `flamin-doctor`).
 
 ## 5. Name check
 
