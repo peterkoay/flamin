@@ -131,6 +131,16 @@ Not done, because DESIGN.md leaves it open: how a maintenance session gets file-
 
 Noted during alignment: `.codex/config.toml` had been rewritten outside the build (a `[shell_environment_policy]` block with two Claude Code variables, which Codex does not read); the re-render replaced it. `.codex/agents/orchestrator.toml` had also appeared; D-36 renders only the seven workers, so it was left untouched and not committed. `flamin doctor` in a product writes one audit line for its own hook self-check (session `flamin-doctor`).
 
+## 4b. Product tool selection (D-47, 2026-09-28)
+
+| Check | How | Result |
+|---|---|---|
+| `flamin init` inside Claude Code renders only Claude Code | Fresh copy of the kit, `flamin init` run from a Claude Code shell (`CLAUDECODE=1`) | `Adapters for claude (detected: Claude Code)`; no Codex ACTION line; `state.json` records `tools: ["claude"]` |
+| `flamin doctor` checks only Claude Code | Same copy | Settings files current; the PreToolUse hook, run exactly as Claude Code runs it, denies a force push (JSON deny, exit 2); `Codex: not used by this product; checks skipped.`; no blockers |
+| Unit tests | `kit/engine/tests/test_tools.py` (11 tests): detection, default, `--tool all`, adding a tool, doctor never calls Codex on a Claude-only product, legacy product without `tools`, broken hook reported, prune gated and rejected, CRLF checkout counts as current | Pass (132 in total) |
+
+Not verified: Codex and Cursor auto-detection. Their docs name no marker for the agent's own shell, so both must be named with `--tool`. A kit copy still carries the shared Codex and Cursor files; `flamin doctor --fix --tool claude --prune` removes them through the delete gate.
+
 ## 5. Name check
 
 The forbidden-name check from the build task (D-25; the pattern lives only in the build task) over file contents and file names inside the kit folder, excluding `.git`: **0 matches** at the end of the build (see BUILD_LOG.md). Commit messages: none were made during the build.

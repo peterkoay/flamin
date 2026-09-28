@@ -199,8 +199,18 @@ def cursor_local() -> dict[str, str]:
 
 # ====================================================================== render
 
-def planned(tool: str) -> dict[str, str]:
-    tools = ("claude", "codex", "cursor") if tool == "all" else (tool,)
+ALL_TOOLS = ("claude", "codex", "cursor")
+
+
+def tool_tuple(tool) -> tuple:
+    """"all", one tool name, or a list of tool names."""
+    if tool == "all":
+        return ALL_TOOLS
+    return (tool,) if isinstance(tool, str) else tuple(t for t in ALL_TOOLS if t in tool)
+
+
+def planned(tool="all") -> dict[str, str]:
+    tools = tool_tuple(tool)
     files: dict[str, str] = {}
     if "claude" in tools:
         files.update(claude_shared())
@@ -218,14 +228,14 @@ def planned(tool: str) -> dict[str, str]:
 LOCAL_FILES = {".claude/settings.local.json", ".cursor/hooks.json"}
 
 
-def render_all(root: Path, tool: str = "all", only_existing: bool = False) -> list[str]:
+def render_all(root: Path, tool="all", only_existing: bool = False) -> list[str]:
     changed = []
     for relp, text in sorted(planned(tool).items()):
         target = root / relp
         if only_existing and not target.exists():
             continue
-        if read_text(target) == text:
-            continue
+        if (read_text(target) or "").replace("\r\n", "\n") == text and target.exists():
+            continue  # a CRLF checkout of the same text is current (D-45)
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
@@ -233,10 +243,25 @@ def render_all(root: Path, tool: str = "all", only_existing: bool = False) -> li
     return changed
 
 
-def stale_renders(root: Path) -> list[str]:
+def stale_renders(root: Path, tools="all") -> list[str]:
     out = []
-    for relp, text in sorted(planned("all").items()):
+    for relp, text in sorted(planned(tools).items()):
         target = root / relp
         if target.exists() and (read_text(target) or "").replace("\r\n", "\n") != text:
             out.append(relp)
+    return out
+
+
+# Files each tool's adapter owns, for pruning a tool a product does not use. AGENTS.md is shared by Codex and Cursor.
+TOOL_PATHS = {"claude": (".claude", "CLAUDE.md"), "codex": (".codex",), "cursor": (".cursor",)}
+
+
+def tool_files(root: Path, tool: str) -> list[str]:
+    out = []
+    for item in TOOL_PATHS[tool]:
+        p = root / item
+        if p.is_dir():
+            out += sorted(f.relative_to(root).as_posix() for f in p.rglob("*") if f.is_file())
+        elif p.is_file():
+            out.append(item)
     return out

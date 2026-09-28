@@ -1,6 +1,6 @@
 # flamin Design
 
-**Status:** Approved on 2026-09-26 (decisions D-01 to D-46) | **Kit version:** v1 | **Date:** 2026-09-26 | This is the design the Stage 3 build follows.
+**Status:** Approved on 2026-09-28 (decisions D-01 to D-47) | **Kit version:** v1 | **Date:** 2026-09-28 | This is the design the Stage 3 build follows.
 
 ---
 
@@ -126,7 +126,7 @@ The folder `flamin_v3_Claude` is the **master kit**. It is a clean template and 
 3. Checks for leftover state. Refuses if a product already lives here. Also refuses while the kit-maintenance flag is set (D-46).
 4. Creates `.flamin/` with empty templates and `state.json` at phase 0 (intake), version v1.
 5. Writes `.git/hooks/pre-commit` for the current OS (one line calling the matching launcher), so the backstop is active. It writes the file with LF line endings and the executable bit itself, because git never checks this file out, so `.gitattributes` cannot reach it (D-45).
-6. Renders adapters for `--tool claude|codex|cursor|all` (default `all`), including the machine-local hook files for the current OS.
+6. Renders adapters for the product's tool(s), including the machine-local hook files for the current OS: `--tool claude|codex|cursor|all` if given, otherwise the detected tool (Claude Code when `CLAUDECODE=1` or `CLAUDE_PROJECT_DIR` is set), otherwise Claude Code. The choice is recorded in `state.json` as `tools`; `--tool` on an existing product adds a tool and never removes one (D-47).
 7. Writes `.gitignore` entries (Section 2.7).
 
 Every step is safe to run twice.
@@ -1247,6 +1247,12 @@ Approved in review round 5 (2026-09-26), from the Stage 3 build findings (VERIFI
 | D-44 | K-7 | Cursor also loads `.claude/agents/`, `.codex/agents/` and, with Third-Party Imports on (the default), Claude Code hook files. The engine answers any Cursor payload in Cursor's format, denies launches of `orchestrator`, and makes gate requests and audit lines idempotent per tool call: key = `tool_use_id`, else `generation_id` + hook event + hash of the tool input. Probe again when the Cursor CLI is available. |
 | D-45 | K-8 | A root `.gitattributes` is part of the kit and of the enforcement layer: LF for `flamin`, `kit/githooks/*` and `.flamin/**/*.json`; CRLF for `*.cmd`. `flamin` and the hook templates are committed as mode 100755. `flamin init` writes `.git/hooks/pre-commit` with LF and the executable bit. State checksums ignore CRLF versus LF only. |
 | D-46 | K-9 | Master-kit maintenance mode turns on only by a human-only terminal command that writes a git-ignored flag. With the flag and no `.flamin/`, the product flow does not apply and D-30 is lifted for kit files only; kit changes must pass the engine tests and refresh `kit/MANIFEST`. `flamin init` refuses while the flag is set. `flamin doctor --kit` fails if the flag exists. "No product found" alone never enables it. The master kit keeps shipping the rendered adapters. How maintenance sessions get write tools is not decided here. |
+
+Approved on 2026-09-28 (kit maintenance request, human-issued).
+
+| Id | Was | Decision |
+|---|---|---|
+| D-47 | kit maintenance | A product uses only the AI tool(s) the human chose, recorded by the engine in `state.json` as `tools` (a subset of claude, codex, cursor). `flamin init` takes `--tool` if given, else the detected tool, else Claude Code; `all` is an explicit opt-in. Only Claude Code is auto-detected (`CLAUDECODE=1` or `CLAUDE_PROJECT_DIR`), because no Codex or Cursor marker for the agent's own shell is documented. `--tool` on an existing product adds a tool and never silently removes one. `flamin doctor`, `flamin status` (hook warning), the stale-adapter check and `flamin upgrade` act only on the product's tools: Claude Code checks run only for Claude Code, Codex checks only for Codex (or `--probe-codex`), and the Codex re-trust note appears only when Codex is used. Reason: checks and notes for a tool the product does not use are noise that hides real warnings, and running Codex on a Claude Code machine is wasted and confusing. A product without `tools` (made before D-47) keeps the old behaviour by inferring its tools from the adapter files present, so no state migration is needed. `flamin doctor --fix --tool <x> --prune` deletes the adapter files of other tools through the Approval Gate for deletes (§15.3). |
 
 ### Proposed decisions (awaiting approval)
 

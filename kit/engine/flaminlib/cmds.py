@@ -68,9 +68,8 @@ def os_name() -> str:
 # ====================================================================== init
 
 def cmd_init(p: Product, args) -> int:
-    from .render import render_all
+    from .render import render_all, tool_tuple
 
-    tool = args.tool or "all"
     out(f"flamin init (kit {kit_version()}) on {os_name()}")
     out(f"  1. Kit runtime: Python {platform.python_version()} ({sys.executable}); command for this OS: {python_command()}")
     if sys.version_info < (3, 11):
@@ -104,17 +103,26 @@ def cmd_init(p: Product, args) -> int:
     # 5. pre-commit
     msg = install_precommit(p.root)
     out(f"  5. {msg}")
-    # 6. adapters
-    changed = render_all(p.root, tool)
-    out(f"  6. Adapters for {tool}: " + (", ".join(changed) if changed else "already current"))
-    if any(c.startswith(".codex/config.toml") for c in changed):
-        out("     ACTION: Codex skips changed hooks silently. Open Codex, run /hooks and trust the flamin hooks again.")
+    # 6. adapters: the tool(s) this product uses. `--tool` adds a tool; it never silently removes one.
+    if args.tool:
+        chosen, why = args.tool, f"--tool {args.tool}"
+    elif not created and product_tools(p)[0]:
+        chosen, why = product_tools(p)  # existing product: keep its tools (legacy: the adapters it has)
+    else:
+        chosen, why = detect_tool()
+    tools = record_tools(p, list(tool_tuple(chosen)))
+    changed = render_all(p.root, tools)
+    label = "all" if chosen == "all" else ", ".join(tool_tuple(chosen))
+    out(f"  6. Adapters for {label} ({why}): " + (", ".join(changed) if changed else "already current"))
+    note = codex_action_note(tools, changed)
+    if note:
+        out("     " + note)
     # 7. .gitignore
     added = ensure_gitignore(p.root)
     out("  7. .gitignore: " + (f"added {len(added)} entr{'y' if len(added) == 1 else 'ies'}" if added else "already current"))
     if created:
-        p.log("init", target=".flamin/", reason=f"new product state; adapters {tool}")
-        p.ledger("init", decisions=f"adapters {tool}")
+        p.log("init", target=".flamin/", reason=f"new product state; adapters {', '.join(tools)}")
+        p.ledger("init", decisions=f"adapters {', '.join(tools)}")
         out("\nReady. The Business agent starts intake: product name, purpose, and who will use it.")
     return 0
 
@@ -174,10 +182,11 @@ def ensure_gitignore(root: Path) -> list[str]:
 # ====================================================================== status and resume
 
 def hook_warning(p: Product) -> str | None:
+    tools, _ = product_tools(p)
     rendered = [t for t, f in (("claude", ".claude/settings.local.json"), ("codex", ".codex/config.toml"),
-                               ("cursor", ".cursor/hooks.json")) if (p.root / f).exists()]
+                               ("cursor", ".cursor/hooks.json")) if t in tools and (p.root / f).exists()]
     beats = hooks.heartbeats(p.root)
-    fresh = [t for t, age in beats.items() if age <= hooks.HEARTBEAT_FRESH_SECONDS]
+    fresh = [t for t, age in beats.items() if age <= hooks.HEARTBEAT_FRESH_SECONDS and t in tools]
     if fresh:
         return None
     detail = (f"hook files present for: {', '.join(rendered)}" if rendered else "no hook files are set up on this machine")
@@ -617,20 +626,34 @@ def cmd_doctor(p: Product, args) -> int:
             problems.pop()
     elif args.clear_stale_lock:
         notes.append("No stale lock to clear (the engine never removes a live lock).")
-    # adapters
+    # adapters: only the tools this product uses
+    tools, source = product_tools(p, args.tool)
+    notes.append(f"AI tools checked: {', '.join(TOOL_LABELS[t] for t in tools) or 'none'} ({source})")
+    if args.prune:
+        if not args.tool:
+            problems.append("--prune needs --tool: name the tool(s) to keep, for example `--tool claude`.")
+        else:
+            prune_tools(p, tools, notes, problems)
     if p.store.exists() or not args.kit:
         if args.fix:
-            changed = render_all(root, "all" if args.tool is None else args.tool, only_existing=True)
+            changed = render_all(root, tools)
             if changed:
                 notes.append("Re-rendered: " + ", ".join(changed))
-                if any(c.startswith(".codex/config.toml") for c in changed):
-                    notes.append("ACTION: trust the changed Codex hooks in /hooks.")
-        for s in stale_renders(root):
+                note = codex_action_note(tools, changed)
+                if note:
+                    notes.append(note)
+            if p.store.exists() and args.tool and not args.prune:
+                record_tools(p, tools)
+        for s in stale_renders(root, tools):
             problems.append(f"Adapter file out of date: {s} (run `flamin init --tool <name>` or `flamin doctor --fix`)")
-    if (root / ".codex" / "config.toml").exists():
+    if "claude" in tools:
+        claude_checks(root, notes, problems, product=p.store.exists())
+    if "codex" in tools or args.probe_codex:
         notes.append("Codex: project hooks run only after you trust them in /hooks (and again after every change). "
                      "If the heartbeat warning shows in Codex, that is the cause.")
         codex_checks(root, notes, problems, live=args.probe_codex)
+    else:
+        notes.append("Codex: not used by this product; checks skipped.")
     exec_bit_check(root, problems)
     # manifest
     for pr in mf.verify_tree(root):
@@ -719,13 +742,15 @@ def cmd_upgrade(p: Product, args) -> int:
         shutil.copy2(src / f, dst)
     for f in removed:
         (p.root / f).unlink(missing_ok=True)
-    rend = render_all(p.root, "all", only_existing=True)
+    tools, _ = product_tools(p)
+    rend = render_all(p.root, tools, only_existing=True)
     if p.store.exists():
         p.log("upgrade", target="kit/", reason=f"{old_v} -> {new_v}: {len(changed)} changed, {len(removed)} removed",
               approver="human via terminal")
     out(f"Kit upgraded to {new_v}. .flamin/ was not touched.")
-    if any(r.startswith(".codex/config.toml") for r in rend):
-        out("ACTION: Codex skips changed hooks silently. Run /hooks in Codex and trust the flamin hooks again.")
+    note = codex_action_note(tools, rend)
+    if note:
+        out(note)
     return 0
 
 
@@ -920,3 +945,162 @@ def maintenance_test_check(root: Path, new_of) -> list[str]:
         return ["Kit changes in maintenance mode must pass the engine tests first: run `flamin kit-maintenance test`, "
                 "then stage kit/MANIFEST (D-46)."]
     return []
+
+
+# ====================================================================== product tools
+
+TOOL_LABELS = {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor"}
+
+
+def detect_tool() -> tuple[str, str]:
+    """The AI tool this command runs inside. Only Claude Code sets a documented marker in the agent's own shell
+    (CLAUDECODE=1, and CLAUDE_PROJECT_DIR for hooks). No Codex or Cursor marker is verified in their docs, so
+    neither is detected; the default is Claude Code."""
+    if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_PROJECT_DIR"):
+        return "claude", "detected: Claude Code"
+    return "claude", "default: no AI tool detected"
+
+
+def inferred_tools(root: Path) -> list[str]:
+    """Legacy products without state['tools']: the tools whose adapter files exist."""
+    found = []
+    if (root / ".claude" / "settings.json").exists() or (root / "CLAUDE.md").exists():
+        found.append("claude")
+    if (root / ".codex" / "config.toml").exists():
+        found.append("codex")
+    if (root / ".cursor" / "agents").is_dir() or (root / ".cursor" / "hooks.json").exists():
+        found.append("cursor")
+    return found
+
+
+def product_tools(p: Product, override: str | None = None) -> tuple[list[str], str]:
+    """Tools this product uses: --tool, else state['tools'], else inferred from adapter files."""
+    from .render import tool_tuple
+
+    if override:
+        return list(tool_tuple(override)), f"--tool {override}"
+    if p.store.exists():
+        tools = p.store.load("state").get("tools")
+        if tools:
+            return list(tool_tuple(tools)), "product state"
+    return inferred_tools(p.root), "adapter files present"
+
+
+def record_tools(p: Product, tools: list[str], replace: bool = False) -> list[str]:
+    """Write state['tools'] (engine only). Adds by default; `replace` is used after an approved prune."""
+    from .render import tool_tuple
+
+    with p.tx() as (state, _):
+        current = [] if replace else state.get("tools") or []
+        state["tools"] = list(tool_tuple(set(current) | set(tools)))
+        return state["tools"]
+
+
+def codex_action_note(tools, changed) -> str | None:
+    if "codex" in tools and any(c.startswith(".codex/config.toml") for c in changed):
+        return "ACTION: Codex skips changed hooks silently. Open Codex, run /hooks and trust the flamin hooks again."
+    return None
+
+
+# ====================================================================== Claude Code checks
+
+def claude_checks(root: Path, notes: list, problems: list, product: bool) -> None:
+    from .render import claude_local, claude_shared
+
+    shared, local = claude_shared(), claude_local()
+    for rel, want in ((".claude/settings.json", shared[".claude/settings.json"]),
+                      (".claude/settings.local.json", local[".claude/settings.local.json"])):
+        have = read_text(root / rel)
+        if have is None:
+            if rel.endswith("local.json") and not product:
+                notes.append(f"Claude Code: {rel} is machine-local and not rendered here; `flamin init` renders it.")
+            else:
+                problems.append(f"Claude Code: {rel} is missing. Run `flamin doctor --fix --tool claude`.")
+        elif have.replace("\r\n", "\n") != want:
+            problems.append(f"Claude Code: {rel} differs from the rendered adapter. Run `flamin doctor --fix --tool claude`.")
+        else:
+            notes.append(f"Claude Code: {rel} is current.")
+    # Heartbeat age first: the probe below runs the hook and would reset it.
+    beat = root / ".flamin" / "tmp" / "heartbeat-claude"
+    if beat.exists():
+        notes.append(f"Claude Code: last hook call {int(time.time() - beat.stat().st_mtime)} s ago (heartbeat-claude).")
+    elif product:
+        notes.append("Claude Code: no hook has run yet in this product (no heartbeat-claude).")
+    # Run the PreToolUse handler exactly as Claude Code would: exec form, placeholders substituted, cwd = root.
+    settings = json.loads(read_text(root / ".claude" / "settings.local.json") or local[".claude/settings.local.json"])
+    try:
+        handler = settings["hooks"]["PreToolUse"][0]["hooks"][0]
+    except (KeyError, IndexError, TypeError):
+        problems.append("Claude Code: no PreToolUse hook in .claude/settings.local.json. Run `flamin doctor --fix --tool claude`.")
+        return
+    proj = str(root)
+    argv = [handler.get("command", "")] + [a.replace("${CLAUDE_PROJECT_DIR}", proj) for a in handler.get("args", [])]
+    payload = json.dumps({"hook_event_name": "PreToolUse", "session_id": "flamin-doctor", "permission_mode": "default",
+                          "tool_name": "Bash", "tool_input": {"command": PROBE_COMMAND}})
+    try:
+        r = subprocess.run(argv, cwd=proj, input=payload, capture_output=True, text=True, timeout=60,
+                           env=dict(os.environ, CLAUDE_PROJECT_DIR=proj))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        problems.append(f"Claude Code: the PreToolUse hook command did not start ({exc}). Check `{handler.get('command')}`.")
+        return
+    try:
+        decision = json.loads(r.stdout.strip().splitlines()[-1]).get("hookSpecificOutput", {}).get("permissionDecision")
+    except (ValueError, IndexError):
+        decision = None
+    # Claude Code's deny contract (hooks.py, DESIGN §4.1, D-40): JSON deny plus exit code 2, reason on stderr.
+    if r.returncode == 2 and decision == "deny":
+        notes.append("Claude Code: the PreToolUse hook runs as Claude Code runs it and denies a destructive command "
+                     "(JSON deny, exit 2).")
+    else:
+        problems.append(f"Claude Code: the PreToolUse hook did not deny a destructive command (exit {r.returncode}, "
+                        f"decision {decision}). {r.stderr.strip()[:200]}")
+
+
+# ====================================================================== pruning unused tools
+
+def prune_tools(p: Product, keep: list[str], out_notes: list, out_problems: list) -> None:
+    """Delete adapter files of tools not in `keep`. Deleting files is an Approval Gate (DESIGN §15.3)."""
+    from .render import ALL_TOOLS, tool_files
+
+    if not p.store.exists():
+        out_problems.append("--prune needs a product (its approval is recorded in .flamin/approvals.json).")
+        return
+    victims = []
+    for t in ALL_TOOLS:
+        if t not in keep:
+            victims += tool_files(p.root, t)
+    if not ({"codex", "cursor"} & set(keep)) and (p.root / "AGENTS.md").exists():
+        victims.append("AGENTS.md")
+    if not victims:
+        out_notes.append("Prune: no adapter files of unused tools are present.")
+        record_tools(p, keep, replace=True)
+        return
+    payload = "delete adapter files of unused tools\n" + "\n".join(sorted(victims))
+    with p.tx() as (state, appr):
+        req = ap.approved_unused(appr, "prune", payload)
+        if req:
+            req["consumed"] = iso()
+        else:
+            req = ap.open_request(p.store, state, appr, "prune", f"Delete {len(victims)} adapter file(s) of unused tools",
+                                  payload, [f"1. Understood: this product uses only {', '.join(keep)}",
+                                            f"2. Planned:    delete the adapter files of the other tools ({len(victims)} files)",
+                                            "3. Because:    deleting files is an Approval Gate item (DESIGN §15.3)"],
+                                  data={"keep": keep})
+            out(ap.format_request(req))
+            out_notes.append(f"Prune waits for approval {req['id']}; nothing was deleted. After "
+                             f"`flamin approve {req['id']} --yes`, run the same command again.")
+            return
+    for rel in sorted(victims):
+        (p.root / rel).unlink(missing_ok=True)
+    for d in (".claude", ".codex", ".cursor"):
+        base = p.root / d
+        if base.is_dir():
+            for sub in sorted((x for x in base.rglob("*") if x.is_dir()), key=lambda x: len(x.parts), reverse=True):
+                if not any(sub.iterdir()):
+                    sub.rmdir()
+            if not any(base.iterdir()):
+                base.rmdir()
+    tools = record_tools(p, keep, replace=True)
+    p.log("prune", target=",".join(sorted(victims))[:300], reason=f"kept {tools}", approver=req.get("approver"),
+          request=req["id"])
+    out_notes.append(f"Pruned {len(victims)} adapter file(s) ({req['id']}). Product tools: {', '.join(tools)}.")

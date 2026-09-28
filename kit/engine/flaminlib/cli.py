@@ -31,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--tool", choices=["claude", "codex", "cursor", "all"], default=None)
     sp.add_argument("--update-manifest", action="store_true", help="kit maintainers: rewrite kit/MANIFEST")
     sp.add_argument("--probe-codex", action="store_true", help="prove the hooks inside the installed Codex (one model call)")
+    sp.add_argument("--prune", action="store_true",
+                    help="with --tool: delete adapter files of tools not named (an Approval Gate item)")
     add("resume", "Show the last completed step and the next step", cmds.cmd_resume)
 
     sp = add("intake", "Step 0: record intake answers, report missing items, open the stack gate", flow.cmd_intake)

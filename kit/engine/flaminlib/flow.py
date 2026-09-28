@@ -955,6 +955,8 @@ def decide(p: Product, rid: str, yes: bool | None, argv_key: str) -> None:
                 result = _apply_cr_list(p, state, req)
             elif kind == "release":
                 result = _apply_release(p, state, req, True, approver)
+            elif kind == "prune":
+                result = "approved; run the same `flamin doctor --fix --tool ... --prune` again to delete the files"
             elif kind == "migrate":
                 result = "state migration approved; run `flamin upgrade --migrate` again to perform it"
             elif kind == "action":

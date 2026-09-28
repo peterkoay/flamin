@@ -59,3 +59,25 @@ Align the build with review round 5 (DESIGN.md D-38 to D-46). Done means every d
 ## Artifact References
 - Changed: `kit/engine/flaminlib/{audit,cli,cmds,hooks,policy,render}.py`, `kit/engine/tests/test_round5.py`, `kit/adapters/codex/config.toml`, `kit/rules/core.md`, `kit/githooks/*` (mode), `kit/MANIFEST`, `.gitattributes`, `.gitignore` (new), `.codex/config.toml`, `CLAUDE.md`, `AGENTS.md`, `docs/README.md`, `docs/WORKFLOW.md`, `docs/VERIFICATION.md`, `docs/BUILD_LOG.md`
 - Must read: `docs/DESIGN.md` Appendix A (D-38 to D-46), `docs/VERIFICATION.md` §4a
+
+---
+
+## Build handoff 3 (2026-09-28)
+
+## Objective
+Kit maintenance (D-46 mode on): flamin renders, checks and warns only for the AI tool(s) a product uses, for new and existing products. Done means `flamin kit-maintenance test` passes and a fresh kit copy initialised in Claude Code shows only Claude Code adapters and checks.
+
+## State Ledger
+- Completed: `state.json` `tools`; `flamin init` tool detection (Claude Code only) with default Claude Code; `--tool` adds, never removes
+- Completed: `flamin doctor` Claude Code checks, Codex checks only for Codex products, `--fix` per product tool, `--prune` through the delete gate
+- Completed: status hook warning, stale-adapter check and `flamin upgrade` limited to the product's tools
+- Completed: rendering treats a CRLF checkout of the same text as current (no false re-render or Codex ACTION note)
+- Completed: D-47 in DESIGN.md (human-issued kit maintenance request); README; 132 unit tests OK
+- Current: waiting for the human to review, commit and turn maintenance mode off
+- Pending: Codex and Cursor auto-detection (no documented marker)
+- Decisions: D-47
+- Open questions: `.codex/config.toml` and `.codex/agents/orchestrator.toml` were rewritten again on 2026-09-27 outside flamin (see the session report)
+
+## Artifact References
+- Changed: `kit/engine/flaminlib/{cmds,render,cli,flow}.py`, `kit/engine/tests/test_tools.py`, `kit/MANIFEST`, `docs/DESIGN.md`, `docs/README.md`, `docs/VERIFICATION.md`, `docs/BUILD_LOG.md`
+- Must read: `docs/DESIGN.md` D-47, `docs/README.md` "Which AI tool a product uses"
