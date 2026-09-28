@@ -44,7 +44,7 @@ A product uses only the tool(s) you choose, and flamin renders, checks and warns
 - `flamin init --tool codex` (or `cursor`) adds a second tool to an existing product; nothing is removed. `--tool all` renders all three.
 - The choice is stored in `.flamin/state.json` (`tools`). Products made before this change have no `tools` entry: flamin uses the tools whose adapter files exist, as before.
 - A copy of the master kit carries the shared files of all three tools. To remove the ones a product does not use: `flamin doctor --fix --tool claude --prune`. Deleting files is an Approval Gate: the first run shows the file list and a request id, you answer `flamin approve R-000n --yes`, and the same command run again deletes them.
-- `flamin doctor` runs the Claude Code checks (settings files current; the PreToolUse hook run exactly as Claude Code runs it must deny a destructive command; last hook call) only when Claude Code is a product tool, and the Codex checks only when Codex is. Otherwise it prints `Codex: not used by this product; checks skipped.`
+- `flamin doctor` runs the Claude Code checks (settings files current; the PreToolUse hook run exactly as Claude Code runs it must deny a destructive command; last hook call) only when Claude Code is a product tool, the Codex checks only when Codex is, and the Cursor checks (agent and hook files current; the `preToolUse` command run the way Cursor runs it must deny a destructive command; last hook call) only when Cursor is. For a tool the product does not use it prints, for example, `Codex: not used by this product; checks skipped.` The Cursor check proves the hook command at shell level; it cannot prove that Cursor itself runs it.
 
 ### Per tool, once per machine
 

@@ -152,3 +152,28 @@ class TestRenderLineEndings(ToolProject):
         self.assertIn("already current", out)
         self.assertNotIn("ACTION", out)
 
+
+class TestCursorChecks(ToolProject):
+    def test_cursor_product(self):
+        self.flamin("init", "--tool", "cursor")
+        out = self.flamin("doctor", expect=None)
+        self.assertIn("Cursor: the preToolUse hook runs as Cursor runs it and denies a destructive command", out)
+        self.assertIn("adapter file(s) current", out)
+        self.assertIn("Cursor: no hook has run yet in this product", out)
+        self.assertNotIn("FAIL Cursor", out)
+        self.assertIn("Codex: not used by this product; checks skipped.", out)
+
+    def test_claude_only_skips_cursor(self):
+        os.environ["CLAUDECODE"] = "1"
+        self.flamin("init")
+        out = self.flamin("doctor", expect=None)
+        self.assertIn("Cursor: not used by this product; checks skipped.", out)
+
+    def test_broken_cursor_hook_is_reported(self):
+        self.flamin("init", "--tool", "cursor")
+        h = json.loads(self.read(".cursor/hooks.json"))
+        h["hooks"]["preToolUse"][0]["command"] = "exit 0"
+        self.write(".cursor/hooks.json", json.dumps(h))
+        out = self.flamin("doctor", expect=1)
+        self.assertIn("FAIL Cursor: .cursor/hooks.json differs", out)
+        self.assertIn("FAIL Cursor: the preToolUse hook did not deny", out)

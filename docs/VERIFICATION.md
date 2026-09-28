@@ -137,7 +137,8 @@ Noted during alignment: `.codex/config.toml` had been rewritten outside the buil
 |---|---|---|
 | `flamin init` inside Claude Code renders only Claude Code | Fresh copy of the kit, `flamin init` run from a Claude Code shell (`CLAUDECODE=1`) | `Adapters for claude (detected: Claude Code)`; no Codex ACTION line; `state.json` records `tools: ["claude"]` |
 | `flamin doctor` checks only Claude Code | Same copy | Settings files current; the PreToolUse hook, run exactly as Claude Code runs it, denies a force push (JSON deny, exit 2); `Codex: not used by this product; checks skipped.`; no blockers |
-| Unit tests | `kit/engine/tests/test_tools.py` (11 tests): detection, default, `--tool all`, adding a tool, doctor never calls Codex on a Claude-only product, legacy product without `tools`, broken hook reported, prune gated and rejected, CRLF checkout counts as current | Pass (132 in total) |
+| Cursor checks in `flamin doctor` (added 2026-09-28) | Master kit `flamin doctor --kit`; Cursor product in unit tests | Adapter files current; the rendered `preToolUse` command, run through PowerShell from the project root, returns `{"permission": "deny"}` with exit 0; `Cursor: not used by this product; checks skipped.` on other products. Shell-level only: Cursor itself was not run (its CLI is not installed here). |
+| Unit tests | `kit/engine/tests/test_tools.py` (14 tests): detection, default, `--tool all`, adding a tool, doctor never calls Codex on a Claude-only product, legacy product without `tools`, broken hook reported, prune gated and rejected, CRLF checkout counts as current | Pass (135 in total) |
 
 Not verified: Codex and Cursor auto-detection. Their docs name no marker for the agent's own shell, so both must be named with `--tool`. A kit copy still carries the shared Codex and Cursor files; `flamin doctor --fix --tool claude --prune` removes them through the delete gate.
 

@@ -654,6 +654,10 @@ def cmd_doctor(p: Product, args) -> int:
         codex_checks(root, notes, problems, live=args.probe_codex)
     else:
         notes.append("Codex: not used by this product; checks skipped.")
+    if "cursor" in tools:
+        cursor_checks(root, notes, problems, product=p.store.exists())
+    else:
+        notes.append("Cursor: not used by this product; checks skipped.")
     exec_bit_check(root, problems)
     # manifest
     for pr in mf.verify_tree(root):
@@ -1104,3 +1108,63 @@ def prune_tools(p: Product, keep: list[str], out_notes: list, out_problems: list
     p.log("prune", target=",".join(sorted(victims))[:300], reason=f"kept {tools}", approver=req.get("approver"),
           request=req["id"])
     out_notes.append(f"Pruned {len(victims)} adapter file(s) ({req['id']}). Product tools: {', '.join(tools)}.")
+
+
+# ====================================================================== Cursor checks
+
+def cursor_checks(root: Path, notes: list, problems: list, product: bool) -> None:
+    """Rendered files current; the preToolUse command run the way Cursor runs it must deny; last hook call.
+
+    Shell-level proof only: it cannot show that Cursor itself runs the hooks (that needs a live Cursor probe)."""
+    from .render import cursor_local, cursor_shared
+
+    want = dict(cursor_shared())
+    want.update(cursor_local())
+    stale = []
+    for rel, text in sorted(want.items()):
+        have = read_text(root / rel)
+        if have is None:
+            if rel == ".cursor/hooks.json" and not product:
+                notes.append(f"Cursor: {rel} is machine-local and not rendered here; `flamin init --tool cursor` renders it.")
+            else:
+                problems.append(f"Cursor: {rel} is missing. Run `flamin doctor --fix --tool cursor`.")
+        elif have.replace("\r\n", "\n") != text:
+            stale.append(rel)
+    for rel in stale:
+        problems.append(f"Cursor: {rel} differs from the rendered adapter. Run `flamin doctor --fix --tool cursor`.")
+    if not stale:
+        present = [r for r in want if (root / r).exists()]
+        notes.append(f"Cursor: {len(present)} adapter file(s) current (.cursor/agents/*.md"
+                     + (", .cursor/hooks.json)." if (root / ".cursor/hooks.json").exists() else ")."))
+    # Heartbeat age first: the probe below runs the hook and would reset it.
+    beat = root / ".flamin" / "tmp" / "heartbeat-cursor"
+    if beat.exists():
+        notes.append(f"Cursor: last hook call {int(time.time() - beat.stat().st_mtime)} s ago (heartbeat-cursor).")
+    elif product:
+        notes.append("Cursor: no hook has run yet in this product (no heartbeat-cursor).")
+    # Run the preToolUse command as Cursor runs it: from the project root, through PowerShell on Windows (probed, §5.4).
+    hooks_json = json.loads(read_text(root / ".cursor" / "hooks.json") or want[".cursor/hooks.json"])
+    try:
+        command = hooks_json["hooks"]["preToolUse"][0]["command"]
+    except (KeyError, IndexError, TypeError):
+        problems.append("Cursor: no preToolUse hook in .cursor/hooks.json. Run `flamin doctor --fix --tool cursor`.")
+        return
+    payload = json.dumps({"hook_event_name": "preToolUse", "conversation_id": "flamin-doctor", "generation_id": "flamin-doctor",
+                          "cursor_version": "flamin-doctor", "tool_name": "Shell", "tool_input": {"command": PROBE_COMMAND}})
+    shell_cmd = ["powershell.exe", "-NoProfile", "-Command", command] if os.name == "nt" else ["sh", "-c", command]
+    try:
+        r = subprocess.run(shell_cmd, cwd=str(root), input=payload, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        problems.append(f"Cursor: the preToolUse hook command did not start ({exc}).")
+        return
+    try:
+        decision = json.loads(r.stdout.strip().splitlines()[-1]).get("permission")
+    except (ValueError, IndexError, AttributeError):
+        decision = None
+    # Cursor's deny contract (hooks.py, D-40): {"permission": "deny"} with exit 0.
+    if r.returncode == 0 and decision == "deny":
+        notes.append("Cursor: the preToolUse hook runs as Cursor runs it and denies a destructive command "
+                     "(JSON deny, exit 0).")
+    else:
+        problems.append(f"Cursor: the preToolUse hook did not deny a destructive command (exit {r.returncode}, "
+                        f"decision {decision}). {r.stderr.strip()[:200]}")
