@@ -5,7 +5,7 @@ import tomllib
 
 from helpers import Project
 
-from flaminlib import cmds, manifest as mf, policy as pol
+from flaminlib import cmds, manifest as mf, policy as pol, render
 from flaminlib.util import sha256_text
 
 
@@ -20,6 +20,19 @@ def bash(command, agent=None, tool_use_id=None, mode="default"):
 
 
 class TestRenderRound5(Project):
+    def test_codex_shell_environment_preserves_agents_and_hooks(self):
+        self.init("all")
+        cfg = tomllib.loads(self.read(".codex/config.toml"))
+        self.assertEqual(cfg["shell_environment_policy"], {
+            "inherit": "core", "set": {
+                "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
+                "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "10"}})
+        self.assertEqual(cfg["agents"], {"max_depth": 1, "max_concurrent_threads_per_session": 10})
+        self.assertEqual(cfg["hooks"], tomllib.loads(render.codex_hooks_toml())["hooks"])
+        self.assertEqual(set(cfg["hooks"]), {"PreToolUse", "SubagentStart", "PostToolUse", "Stop", "SessionEnd"})
+        workers = {p.stem for p in (self.root / ".codex/agents").glob("*.toml")}
+        self.assertEqual(workers, {"business", "analyst", "architect", "planner", "designer", "developer", "tester"})
+
     def test_codex_keys_and_cursor_command(self):
         self.init("all")
         cfg = tomllib.loads(self.read(".codex/config.toml"))

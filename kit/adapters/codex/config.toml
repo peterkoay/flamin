@@ -4,3 +4,12 @@
 max_depth = 1
 # max_concurrent_threads_per_session is the documented name; max_threads is its legacy alias (D-38).
 max_concurrent_threads_per_session = 10
+
+# Limit inherited shell variables; configure project-specific environment explicitly.
+[shell_environment_policy]
+inherit = "core"
+
+# Values passed to Claude subprocesses. Codex limits remain in [agents] above.
+[shell_environment_policy.set]
+CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH = "1"
+CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS = "10"

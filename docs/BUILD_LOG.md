@@ -93,6 +93,23 @@ Kit maintenance (D-46 mode on): flamin renders, checks and warns only for the AI
   publication commit. See the adapter rewrite note in `VERIFICATION.md`.
 - The local maintenance flag is ignored by Git and is not shipped.
 
+## Codex shell environment alignment (2026-10-02)
+
+- Human scope: keep the main chat as Orchestrator; incorporate only the local
+  shell environment policy through the canonical adapter and renderer tests.
+- Added core environment inheritance and two Claude subprocess values to
+  `kit/adapters/codex/config.toml`, preserving native Codex limits and hooks.
+- Added semantic TOML verification of environment, agent limits, hooks and
+  seven worker agents. Local extra Orchestrator file remains untouched.
+- Documented explicit project environment configuration and regeneration via
+  `flamin doctor --fix --tool codex`.
+- Validation: 11 focused tests passed (21.077s); all 136 engine tests passed
+  through `flamin kit-maintenance test` (292.280s); manifest refreshed.
+  Generated and local TOML match semantically; whitespace check passed.
+- Regenerated `.codex/config.toml` with the engine's doctor command; doctor
+  found no blockers, accepted the native Codex limits, and passed the hook
+  shell self-check. Re-trust the Flamin hooks in Codex after regeneration.
+
 ## Publication terminology cleanup (2026-10-02)
 
 - Human-approved wording change: replaced the historical stage label with

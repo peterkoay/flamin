@@ -122,6 +122,20 @@ flamin kit-maintenance off      # a human, in a terminal
 
 While the mode is on, kit files (`kit/`, the launchers) are open to agents; tool config, rules files and `.git/` stay shut. The pre-commit check refuses kit changes that did not pass `flamin kit-maintenance test`. `flamin init` is refused and `flamin doctor --kit` fails until the mode is off, so a shipped kit never carries the flag. How a maintenance session gets file-editing tools is not decided yet (DESIGN D-46); today a human edits, or grants the session shell access.
 
+## Codex shell environment
+
+The Codex adapter sets `shell_environment_policy.inherit = "core"`, limiting
+which parent environment variables reach shell commands. Projects that depend
+on custom environment variables must configure those explicitly. The two
+`CLAUDE_CODE_MAX_*` values are passed to Claude subprocesses; they do not set
+Codex agent limits. Codex uses its native `[agents]` settings for depth 1 and
+up to 10 concurrent agents. The main chat remains the Orchestrator, with seven
+rendered worker agents.
+
+Adapter changes belong in `kit/adapters/codex/config.toml`. After maintenance
+tests pass, `flamin doctor --fix --tool codex` regenerates the master adapters;
+do not edit `.codex/config.toml` directly.
+
 ## Future option (not built)
 
 A PreInvocation safety filter for prompts, with configurable policy files, is a future enterprise option (DESIGN §15.4). Today's policy patterns are built-in defaults.

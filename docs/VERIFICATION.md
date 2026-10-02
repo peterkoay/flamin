@@ -142,6 +142,26 @@ Noted during alignment: `.codex/config.toml` had been rewritten outside the buil
 
 Not verified: Codex and Cursor auto-detection. Their docs name no marker for the agent's own shell, so both must be named with `--tool`. A kit copy still carries the shared Codex and Cursor files; `flamin doctor --fix --tool claude --prune` removes them through the delete gate.
 
+## 4c. Codex shell environment alignment (2026-10-02)
+
+The local shell environment policy is now part of the canonical Codex adapter.
+Correction to the earlier alignment note: Codex reads the shell policy and
+passes its `set` values to subprocesses; the Claude variables do not configure
+Codex agent limits. `inherit = "core"` restricts inherited variables, so projects
+relying on custom environment must configure it explicitly.
+
+The renderer test parses generated TOML and checks the shell policy, native
+agent limits, all five unchanged hook groups, and exactly seven worker agents.
+The main chat remains Orchestrator; the local extra Orchestrator file is outside
+this change. Generated and local configuration are compared semantically,
+ignoring comments and formatting. Subprocess behavior in a live Claude session
+is not tested.
+
+Validation: focused `test_round5.py` suite passed 11 tests in 21.077s;
+`flamin kit-maintenance test` passed all 136 tests in 292.280s and refreshed
+`kit/MANIFEST`. The generated configuration semantically matches the local
+TOML exactly. `git diff --check` passed.
+
 ## 5. Name check
 
 The forbidden-name check from the build task (D-25; the pattern lives only in the build task) over file contents and file names inside the kit folder, excluding `.git`: **0 matches** at the end of the build (see BUILD_LOG.md). Commit messages: none were made during the build.
