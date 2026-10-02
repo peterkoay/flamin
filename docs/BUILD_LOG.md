@@ -81,3 +81,14 @@ Kit maintenance (D-46 mode on): flamin renders, checks and warns only for the AI
 ## Artifact References
 - Changed: `kit/engine/flaminlib/{cmds,render,cli,flow}.py`, `kit/engine/tests/test_tools.py`, `kit/MANIFEST`, `docs/DESIGN.md`, `docs/README.md`, `docs/VERIFICATION.md`, `docs/BUILD_LOG.md`
 - Must read: `docs/DESIGN.md` D-47, `docs/README.md` "Which AI tool a product uses"
+## Private GitHub publication preparation (2026-10-02)
+
+- Target: `peterkoay/flamin`, private for human review before public release.
+- Added a root README with setup and documentation links.
+- Added the MIT license, copyright 2026 Peter Koay, as selected by the human.
+- Configured `origin` as `https://github.com/peterkoay/flamin.git`.
+- Validation: `flamin kit-maintenance test` passed all 135 tests.
+- Local changes to `.codex/config.toml` and the untracked
+  `.codex/agents/orchestrator.toml` remain untouched and excluded from the
+  publication commit. See the adapter rewrite note in `VERIFICATION.md`.
+- The local maintenance flag is ignored by Git and is not shipped.
