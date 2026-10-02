@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": ".\\flamin.cmd hook pretool --tool cursor",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": ".\\flamin.cmd hook pretool --tool cursor",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": ".\\flamin.cmd hook pretool --tool cursor",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": ".\\flamin.cmd hook pretool --tool cursor",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": ".\\flamin.cmd hook posttool --tool cursor",
+        "timeout": 30
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": ".\\flamin.cmd hook posttool --tool cursor",
+        "timeout": 30
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": ".\\flamin.cmd hook posttool --tool cursor",
+        "timeout": 30
+      }
+    ],
+    "preCompact": [
+      {
+        "command": ".\\flamin.cmd hook precompact --tool cursor",
+        "timeout": 30
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": ".\\flamin.cmd hook sessionend --tool cursor",
+        "timeout": 30
+      }
+    ],
+    "stop": [
+      {
+        "command": ".\\flamin.cmd hook sessionend --tool cursor",
+        "timeout": 30
+      }
+    ]
+  }
+}
