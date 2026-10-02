@@ -1,6 +1,6 @@
 # flamin build log
 
-Build handoffs for the Stage 3 build of the master kit. Same three-section format as a product handoff (DESIGN §6.6).
+Build handoffs for the initial kit implementation. Same three-section format as a product handoff (DESIGN §6.6).
 
 ---
 
@@ -92,3 +92,12 @@ Kit maintenance (D-46 mode on): flamin renders, checks and warns only for the AI
   `.codex/agents/orchestrator.toml` remain untouched and excluded from the
   publication commit. See the adapter rewrite note in `VERIFICATION.md`.
 - The local maintenance flag is ignored by Git and is not shipped.
+
+## Publication terminology cleanup (2026-10-02)
+
+- Human-approved wording change: replaced the historical stage label with
+  "initial kit implementation" in this log and `DESIGN.md`.
+- Flamin's intake, phases, steps, and version terminology remain unchanged.
+- Historical Git commits remain unchanged.
+- Validation: reviewed the documentation diff and checked for whitespace errors
+  and remaining occurrences of the old label.

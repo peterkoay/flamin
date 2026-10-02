@@ -1,6 +1,6 @@
 # flamin Design
 
-**Status:** Approved on 2026-09-28 (decisions D-01 to D-47) | **Kit version:** v1 | **Date:** 2026-09-28 | This is the design the Stage 3 build follows.
+**Status:** Approved on 2026-09-28 (decisions D-01 to D-47) | **Kit version:** v1 | **Date:** 2026-09-28 | This is the design followed by the initial kit implementation.
 
 ---
 
@@ -1131,7 +1131,7 @@ Agents forget between sessions. `.flamin/` remembers.
 
 ## 21. Open questions
 
-Each item has one recommendation: **Fix**, **Workaround** or **Drop**. P-01 to P-14 were approved as D-12 to D-25, and P-15 to P-18 as D-26 to D-29 (Appendix A). P-19 to P-26 were approved as D-30 to D-37 (Appendix A). Items marked "at build" are closed by probes during Stage 3.
+Each item has one recommendation: **Fix**, **Workaround** or **Drop**. P-01 to P-14 were approved as D-12 to D-25, and P-15 to P-18 as D-26 to D-29 (Appendix A). P-19 to P-26 were approved as D-30 to D-37 (Appendix A). Items marked "at build" are closed by probes during the initial kit implementation.
 
 ### 21.1 Common to all tools
 
@@ -1234,7 +1234,7 @@ Approved in review round 4 (2026-09-24).
 | D-36 | P-25 | On Codex and Cursor the Orchestrator is the main thread, with instructions in `AGENTS.md`, unless the build proves the tool can set a custom main agent. Only seven worker agent files are rendered. Launching an agent named `orchestrator` is denied. |
 | D-37 | P-26 | An audit line that cannot get the lock goes to a per-session spill file, merged at the next append. Audit lines are never dropped. |
 
-Approved in review round 5 (2026-09-26), from the Stage 3 build findings (VERIFICATION.md §3 and §4).
+Approved in review round 5 (2026-09-26), from the initial kit implementation findings (VERIFICATION.md §3 and §4).
 
 | Id | Was | Decision |
 |---|---|---|
