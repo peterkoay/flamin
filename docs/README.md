@@ -8,7 +8,7 @@ flamin is a kit for building software with a team of AI agents. You talk to it i
 - **Build handoffs:** [BUILD_LOG.md](BUILD_LOG.md).
 - **Versioned master-kit archives and GitHub package:** [RELEASING.md](RELEASING.md).
 
-The three other guides in this folder (`Collaborative Workflow.md`, `Generated Code Architecture Summary.md`, `Tips and Tricks.md`) are read-only background about another platform. Their features are not flamin features (DESIGN §0, §19).
+The three original reference guides (`Collaborative Workflow.md`, `Generated Code Architecture Summary.md`, `Tips and Tricks.md`) are kept locally in `docs/archive/local-reference/`. That folder is ignored by Git and excluded from release archives. The guides describe another platform; their features are not flamin features (DESIGN §0, §19).
 
 ## First-run check (once per machine)
 
@@ -97,7 +97,7 @@ Shipped in `kit/stacks/` and copied into the product on approval: `java-spring`,
 ```
 flamin, flamin.cmd   one-line launchers
 kit/                 VERSION, MANIFEST, rules/, engine/, agents/, adapters/, stacks/, githooks/, ci/
-docs/                this README, DESIGN, WORKFLOW, VERIFICATION, BUILD_LOG and the three guides
+docs/                this README, DESIGN, WORKFLOW, VERIFICATION, BUILD_LOG; local-only historical guides in archive/local-reference/
 .flamin/             product state (product copies only; created by flamin init)
 ```
 

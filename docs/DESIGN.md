@@ -24,7 +24,7 @@ Words used often:
 - **Adapter**: the thin layer that turns engine features into native features of one AI tool (Claude Code, Codex or Cursor).
 - **Tool**: one of the three AI coding tools. A session always uses one tool.
 
-**The three guides in `docs/`.** `Collaborative Workflow.md`, `Generated Code Architecture Summary.md` and `Tips and Tricks.md` are read-only background. They describe another platform. Their features (for example session rollback by double-click, file mentions, a workbench, a design page) are not flamin features. Where a guide conflicts with this document, this document wins. Section 19 shows how their useful lessons work in flamin.
+**The three original reference guides.** Local copies of `Collaborative Workflow.md`, `Generated Code Architecture Summary.md` and `Tips and Tricks.md` are archived in `docs/archive/local-reference/`, ignored by Git and excluded from release archives. They describe another platform. Their features (for example session rollback by double-click, file mentions, a workbench, a design page) are not flamin features. Where a guide conflicts with this document, this document wins. Section 19 shows how their useful lessons work in flamin.
 
 ---
 
@@ -62,7 +62,7 @@ The design has three big ideas:
 │   ├── stacks/<profile>/  # shipped stack profiles (read only master copies)
 │   ├── githooks/          # pre-commit templates, rendered per machine into .git/hooks/
 │   └── ci/                # sample CI workflow
-├── docs/                  # this design, the three read-only guides (§0), README, WORKFLOW, VERIFICATION, BUILD_LOG
+├── docs/                  # this design, README, WORKFLOW, VERIFICATION, BUILD_LOG; local archive ignored by Git (§0)
 ├── .flamin/               # product state, created by `flamin init`, never in the master kit
 └── <product code>         # layout comes from the chosen stack profile(s)
 ```

@@ -12,3 +12,4 @@
 *.pem
 *.key
 secrets/
+/docs/archive/local-reference/
