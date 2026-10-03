@@ -15,6 +15,11 @@ for each product. Open the product copy in your AI tool and follow the
 
 The master kit itself never hosts a real product.
 
+For a versioned download, use the full-kit ZIP or tar.gz on the
+[GitHub Releases page](https://github.com/peterkoay/flamin/releases). The first
+`v1` release and matching `@peterkoay/flamin@1.0.0` GitHub npm package are
+prepared but not published yet; see [release instructions](docs/RELEASING.md).
+
 ## Documentation
 
 - [Setup and commands](docs/README.md)
@@ -22,6 +27,7 @@ The master kit itself never hosts a real product.
 - [Design](docs/DESIGN.md)
 - [Verification](docs/VERIFICATION.md)
 - [Build log](docs/BUILD_LOG.md)
+- [Releasing the master kit](docs/RELEASING.md)
 
 ## License
 

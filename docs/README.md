@@ -6,6 +6,7 @@ flamin is a kit for building software with a team of AI agents. You talk to it i
 - **Day-to-day flow:** [WORKFLOW.md](WORKFLOW.md).
 - **What was tested and how:** [VERIFICATION.md](VERIFICATION.md).
 - **Build handoffs:** [BUILD_LOG.md](BUILD_LOG.md).
+- **Versioned master-kit archives and GitHub package:** [RELEASING.md](RELEASING.md).
 
 The three other guides in this folder (`Collaborative Workflow.md`, `Generated Code Architecture Summary.md`, `Tips and Tricks.md`) are read-only background about another platform. Their features are not flamin features (DESIGN §0, §19).
 

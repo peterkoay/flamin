@@ -175,3 +175,7 @@ The forbidden-name check from the build task (D-25; the pattern lives only in th
 ## 6. Master kit cleanliness
 
 `flamin doctor --kit` at the end of the build: no `.flamin/`, no product code, no audit logs, no caches (`__pycache__` is never written: the engine sets `sys.dont_write_bytecode`), no secrets, no machine-local hook files, kit manifest clean, no absolute paths or user or machine names in kit files.
+
+## 7. Master-kit v1 distribution candidate (2026-10-03)
+
+`flamin kit-maintenance test` passed all 147 engine tests in 278.019 seconds and refreshed `kit/MANIFEST`. The release builder verified that manifest before producing `flamin-v1.zip`, `flamin-v1.tar.gz`, `flamin-v1-npm.tgz`, and `flamin-v1-SHA256SUMS.txt` locally. Focused distribution tests checked deterministic archive bytes, matching ZIP and tar member lists, exclusion of the machine-local Cursor hook and untracked adapter, npm package name/version, and rejection of a changed kit file. `npm pack --dry-run --offline --ignore-scripts` recognized `@peterkoay/flamin@1.0.0` with 205 files. These checks do not establish that GitHub publication has occurred; the tag workflow performs the cross-platform checks before publishing.

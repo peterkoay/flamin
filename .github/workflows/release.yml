@@ -1,0 +1,64 @@
+name: Release Flamin kit
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Match release tag to kit version
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          assert Path('kit/VERSION').read_text(encoding='utf-8').strip() == os.environ['GITHUB_REF_NAME']
+      - name: Engine tests
+        run: python -B -m unittest discover -s kit/engine/tests -t kit/engine -v
+      - name: Release archive tests
+        run: python -B -m unittest discover -s tests -t . -v
+      - name: Build and verify master kit
+        run: python -B tools/build_release.py --output-dir dist
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@peterkoay'
+      - name: Build release assets
+        run: python -B tools/build_release.py --output-dir dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --verify-tag --title "Flamin $TAG" --notes-file "docs/RELEASE_NOTES_${TAG}.md"
+      - name: Publish GitHub npm package
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: npm publish "dist/flamin-${TAG}-npm.tgz" --registry=https://npm.pkg.github.com
