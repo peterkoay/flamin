@@ -127,6 +127,12 @@ class TestClaudeHooks(HookBase):
 
 
 class TestCodexHooks(HookBase):
+    def setUp(self):
+        super().setUp()
+        self.flamin("init", "--tool", "codex")
+        self.flamin("approve", self.last_request(), "--yes")
+        self.flamin("init", "--tool", "codex")
+
     def test_apply_patch_locked(self):
         patch = ("*** Begin Patch\n*** Update File: modules/member/services/base_register_service.py\n@@\n"
                  "-REQUIRED = [\"phone\", \"password\"]\n+REQUIRED = []\n*** End Patch\n")
@@ -163,6 +169,12 @@ class TestCodexHooks(HookBase):
 
 
 class TestCursorHooks(HookBase):
+    def setUp(self):
+        super().setUp()
+        self.flamin("init", "--tool", "cursor")
+        self.flamin("approve", self.last_request(), "--yes")
+        self.flamin("init", "--tool", "cursor")
+
     def cur(self, event, **kw):
         base = {"hook_event_name": event, "conversation_id": "conv-1", "generation_id": "g", "model": "m",
                 "cursor_version": "3.21.18", "workspace_roots": [str(self.root)], "user_email": "person@example.invalid"}

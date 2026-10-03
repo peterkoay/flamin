@@ -21,7 +21,7 @@ def bash(command, agent=None, tool_use_id=None, mode="default"):
 
 class TestRenderRound5(Project):
     def test_codex_shell_environment_preserves_agents_and_hooks(self):
-        self.init("all")
+        self.init("codex")
         cfg = tomllib.loads(self.read(".codex/config.toml"))
         self.assertEqual(cfg["shell_environment_policy"], {
             "inherit": "core", "set": {
@@ -34,12 +34,12 @@ class TestRenderRound5(Project):
         self.assertEqual(workers, {"business", "analyst", "architect", "planner", "designer", "developer", "tester"})
 
     def test_codex_keys_and_cursor_command(self):
-        self.init("all")
+        self.init("codex")
         cfg = tomllib.loads(self.read(".codex/config.toml"))
         self.assertEqual(cfg["agents"], {"max_depth": 1, "max_concurrent_threads_per_session": 10})  # D-38
         self.assertIn("PreToolUse", cfg["hooks"])  # D-39: hooks inline only
         self.assertFalse((self.root / ".codex/hooks.json").exists())
-        cur = json.loads(self.read(".cursor/hooks.json"))["hooks"]["preToolUse"][0]["command"]
+        cur = json.loads(render.cursor_local()[".cursor/hooks.json"])["hooks"]["preToolUse"][0]["command"]
         self.assertNotIn("LASTEXITCODE", cur)  # D-40: Cursor keeps the plain launcher
         self.assertIn(".flamin-kit-maintenance", self.read(".gitignore"))
 
@@ -63,6 +63,9 @@ class TestIdempotency(Project):  # D-44
         self.init()
 
     def test_one_audit_line_per_tool_call(self):
+        self.flamin("init", "--tool", "cursor")
+        self.flamin("approve", self.last_request(), "--yes")
+        self.flamin("init", "--tool", "cursor")
         cur = {"hook_event_name": "preToolUse", "conversation_id": "c", "generation_id": "g1", "cursor_version": "3",
                "tool_name": "Shell", "tool_input": {"command": "ls"}, "tool_use_id": "tu-1", "user_email": "x@y.z"}
         self.hook("cursor", cur)

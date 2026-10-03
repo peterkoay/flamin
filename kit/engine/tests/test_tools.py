@@ -43,19 +43,111 @@ class TestInitTools(ToolProject):
         self.assertEqual(self.state()["tools"], ["claude"])
         self.assertFalse(self.rendered()[".codex/config.toml"])
 
-    def test_all_is_explicit(self):
-        out = self.flamin("init", "--tool", "all")
-        self.assertTrue(all(self.rendered().values()))
-        self.assertEqual(self.state()["tools"], ["claude", "codex", "cursor"])
-        self.assertIn("ACTION: Codex", out)
+    def test_all_is_refused_before_product_creation(self):
+        self.flamin("init", "--tool", "all", expect=1)
+        self.assertFalse((self.root / ".flamin/state.json").exists())
 
-    def test_adding_a_tool_keeps_the_first(self):
+    def test_switch_requires_human_answer(self):
         self.flamin("init")
+        out = self.flamin("init", "--tool", "codex")
+        self.assertIn("Approval needed", out)
+        self.assertEqual(self.state()["tools"], ["claude"])
+        self.assertFalse(self.rendered()[".codex/config.toml"])
+        rid = self.last_request()
+        self.flamin("approve", rid, "--yes")
+        out = self.flamin("init", "--tool", "codex")
+        self.assertIn("Adapters for codex", out)
+        self.assertEqual(self.state()["tools"], ["codex"])
+        self.assertFalse(self.rendered()[".claude/settings.json"])
+        self.assertTrue(self.rendered()[".codex/config.toml"])
+        self.assertTrue((self.root / ".flamin/inactive-adapters").exists())
+
+    def test_copied_master_adapters_are_archived(self):
+        from flaminlib.render import render_all
+        render_all(self.root, "all")
+        self.flamin("init", "--tool", "cursor")
+        self.assertFalse((self.root / ".claude").exists())
+        self.assertFalse((self.root / ".codex").exists())
+        self.assertFalse((self.root / "CLAUDE.md").exists())
+        self.assertTrue((self.root / ".cursor/agents").exists())
+        self.assertTrue((self.root / "AGENTS.md").exists())
+        self.assertTrue(list((self.root / ".flamin/inactive-adapters").rglob("config.toml")))
+
+    def test_each_tool_has_only_its_own_discoverable_adapter(self):
+        from flaminlib.render import render_all
+        for tool in ("claude", "codex", "cursor"):
+            with self.subTest(tool=tool):
+                render_all(self.root, "all")
+                if tool == "codex":
+                    self.write(".codex/agents/orchestrator.toml", "name = 'orchestrator'\n")
+                if tool == "cursor":
+                    self.write(".cursor/agents/orchestrator.md", "---\nname: orchestrator\n---\n")
+                if not (self.root / ".flamin/state.json").exists():
+                    self.flamin("init", "--tool", tool)
+                else:
+                    self.flamin("init", "--tool", tool)
+                    if self.last_request() in self.approvals()["requests"]:
+                        rid = self.last_request()
+                        if self.approvals()["requests"][rid]["status"] == "pending":
+                            self.flamin("approve", rid, "--yes")
+                            self.flamin("init", "--tool", tool)
+                self.assertEqual(self.state()["tools"], [tool])
+                for other, path in (("claude", ".claude"), ("codex", ".codex"), ("cursor", ".cursor")):
+                    self.assertEqual((self.root / path).exists(), other == tool)
+                self.assertFalse((self.root / ".codex/agents/orchestrator.toml").exists())
+                self.assertFalse((self.root / ".cursor/agents/orchestrator.md").exists())
+
+    def test_switch_retains_original_config_backup_and_custom_files(self):
         self.flamin("init", "--tool", "codex")
-        self.assertEqual(self.state()["tools"], ["claude", "codex"])
-        out = self.flamin("init")  # no --tool on an existing product: keep its tools, remove nothing
-        self.assertEqual(self.state()["tools"], ["claude", "codex"])
-        self.assertIn("product state", out)
+        self.write(".codex/config.toml", "# customized\n")
+        self.write(".codex/agents/custom.toml", "name = 'custom'\n")
+        self.flamin("init", "--tool", "claude")
+        rid = self.last_request()
+        self.flamin("approve", rid, "--yes")
+        self.flamin("init", "--tool", "claude")
+        self.assertFalse((self.root / ".codex").exists())
+        self.flamin("init", "--tool", "codex")
+        rid = self.last_request()
+        self.flamin("approve", rid, "--yes")
+        self.flamin("init", "--tool", "codex")
+        self.assertIn("name = 'custom'", self.read(".codex/agents/custom.toml"))
+        self.assertTrue(any(p.read_text(encoding="utf-8") == "# customized\n" for p in
+                            (self.root / ".flamin/inactive-adapters").rglob("config.toml")))
+
+    def test_same_tool_refresh_keeps_heartbeat(self):
+        self.flamin("init", "--tool", "claude")
+        beat = self.write(".flamin/tmp/heartbeat-claude", "recent")
+        self.flamin("init")
+        self.assertEqual(beat.read_text(encoding="utf-8"), "recent")
+
+    def test_failed_switch_keeps_approval_and_restores_active_adapter(self):
+        self.flamin("init", "--tool", "claude")
+        self.flamin("init", "--tool", "codex")
+        rid = self.last_request()
+        self.flamin("approve", rid, "--yes")
+        with mock.patch("flaminlib.render.render_all", side_effect=OSError("injected render failure")):
+            with self.assertRaisesRegex(OSError, "injected render failure"):
+                self.flamin("init", "--tool", "codex")
+        self.assertEqual(self.state()["tools"], ["claude"])
+        self.assertTrue((self.root / ".claude/settings.json").exists())
+        self.assertFalse((self.root / ".codex").exists())
+        self.assertNotIn("consumed", self.approvals()["requests"][rid])
+        self.flamin("init", "--tool", "codex")
+        self.assertEqual(self.state()["tools"], ["codex"])
+
+    def test_failed_state_commit_restores_exact_discovery_files(self):
+        self.flamin("init", "--tool", "claude")
+        original = self.read(".claude/settings.json")
+        self.flamin("init", "--tool", "cursor")
+        rid = self.last_request()
+        self.flamin("approve", rid, "--yes")
+        with mock.patch.object(cmds, "record_tools", side_effect=OSError("injected state failure")):
+            with self.assertRaisesRegex(OSError, "injected state failure"):
+                self.flamin("init", "--tool", "cursor")
+        self.assertEqual(self.read(".claude/settings.json"), original)
+        self.assertFalse((self.root / ".cursor").exists())
+        self.assertEqual(self.state()["tools"], ["claude"])
+        self.assertNotIn("consumed", self.approvals()["requests"][rid])
 
 
 class TestDoctorTools(ToolProject):
@@ -93,17 +185,18 @@ class TestDoctorTools(ToolProject):
         self.assertIn("hook files present for: claude", out)
         self.assertNotIn("codex", out.split("hook files present for:")[1].split(";")[0])
 
-    def test_legacy_product_behaves_as_before(self):
-        self.flamin("init", "--tool", "all")
+    def test_legacy_product_requires_selection_when_ambiguous(self):
+        self.flamin("init", "--tool", "claude")
+        from flaminlib.render import render_all
+        render_all(self.root, "codex")
         st = self.state()
         st.pop("tools")
         Store(self.root).save("state", st)  # a product made before state['tools'] existed
-        calls = []
-        with mock.patch.object(cmds, "codex_checks", lambda *a, **k: calls.append(a)):
-            out = self.flamin("doctor", expect=None)
-        self.assertEqual(len(calls), 1)
-        self.assertIn("adapter files present", out)
-        self.assertIn("Claude Code:", out)
+        out = self.flamin("init", expect=1)
+        self.assertIn("ambiguous", out)
+        out = self.flamin("init", "--tool", "codex")
+        self.assertIn("Approval needed", out)
+        self.assertTrue((self.root / ".claude").exists())
 
     def test_broken_claude_hook_is_reported(self):
         os.environ["CLAUDECODE"] = "1"
@@ -115,37 +208,73 @@ class TestDoctorTools(ToolProject):
         self.assertIn("FAIL Claude Code: .claude/settings.local.json differs", out)
         self.assertIn("FAIL Claude Code: the PreToolUse hook did not deny", out)
 
-    def test_prune_is_gated(self):
-        self.flamin("init", "--tool", "all")
-        out = self.flamin("doctor", "--fix", "--tool", "claude", "--prune", expect=None)
-        self.assertIn("Approval needed", out)
-        self.assertIn(".codex/config.toml", out)  # the file list is shown
-        self.assertTrue((self.root / ".codex" / "config.toml").exists())  # nothing goes without an answer
-        self.assertTrue((self.root / "AGENTS.md").exists())
-        rid = [r for r in self.approvals()["requests"].values() if r["kind"] == "prune"][0]["id"]
-        self.flamin("approve", rid, "--yes")
-        out = self.flamin("doctor", "--fix", "--tool", "claude", "--prune", expect=None)
-        self.assertIn("Pruned", out)
-        self.assertFalse((self.root / ".codex").exists() or (self.root / ".cursor").exists())
-        self.assertFalse((self.root / "AGENTS.md").exists())
-        self.assertTrue((self.root / ".claude" / "settings.json").exists() and (self.root / "CLAUDE.md").exists())
+    def test_doctor_fix_cannot_switch(self):
+        self.flamin("init", "--tool", "claude")
+        out = self.flamin("doctor", "--fix", "--tool", "codex", expect=1)
+        self.assertIn("cannot switch this product", out)
         self.assertEqual(self.state()["tools"], ["claude"])
-        self.assertIn("Codex: not used by this product; checks skipped.", out)
+        self.assertFalse((self.root / ".codex").exists())
 
-    def test_prune_rejected_keeps_files(self):
-        self.flamin("init", "--tool", "all")
-        self.flamin("doctor", "--fix", "--tool", "claude", "--prune", expect=None)
-        rid = [r for r in self.approvals()["requests"].values() if r["kind"] == "prune"][0]["id"]
+    def test_doctor_reports_and_archives_inactive_files(self):
+        self.flamin("init", "--tool", "claude")
+        self.write(".codex/config.toml", "# unrelated local content\n")
+        out = self.flamin("doctor", expect=1)
+        self.assertIn("Inactive adapter remains discoverable: .codex", out)
+        self.flamin("doctor", "--fix", expect=None)
+        self.assertFalse((self.root / ".codex").exists())
+        self.assertTrue(any(p.read_text(encoding="utf-8") == "# unrelated local content\n" for p in
+                            (self.root / ".flamin/inactive-adapters").rglob("config.toml")))
+
+    def test_repaired_hook_invalidates_old_heartbeat(self):
+        self.flamin("init", "--tool", "claude")
+        beat = self.write(".flamin/tmp/heartbeat-claude", "recent")
+        self.write(".claude/settings.local.json", "{}\n")
+        self.flamin("doctor", "--fix", expect=None)
+        self.assertFalse(beat.exists())
+
+    def test_doctor_probe_does_not_create_live_session_heartbeat(self):
+        self.flamin("init", "--tool", "claude")
+        beat = self.root / ".flamin/tmp/heartbeat-claude"
+        beat.unlink(missing_ok=True)
+        self.flamin("doctor", expect=None)
+        self.assertFalse(beat.exists())
+
+    def test_restored_missing_hook_invalidates_heartbeat(self):
+        self.flamin("init", "--tool", "cursor")
+        self.flamin("init", "--tool", "claude")
+        self.flamin("approve", self.last_request(), "--yes")
+        self.flamin("init", "--tool", "claude")
+        self.flamin("init", "--tool", "cursor")
+        self.flamin("approve", self.last_request(), "--yes")
+        self.flamin("init", "--tool", "cursor")
+        hook = self.root / ".cursor/hooks.json"
+        hook.unlink()
+        beat = self.write(".flamin/tmp/heartbeat-cursor", "old")
+        self.flamin("doctor", "--fix", expect=None)
+        self.assertTrue(hook.exists())
+        self.assertFalse(beat.exists())
+
+    def test_wrong_tool_hook_is_denied(self):
+        self.flamin("init", "--tool", "claude")
+        code, body, _ = self.hook("codex", {"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                            "tool_input": {"command": "pwd"}})
+        self.assertIn("not this product's active AI tool", body)
+        self.assertEqual(self.state()["tools"], ["claude"])
+
+    def test_rejected_switch_keeps_files(self):
+        self.flamin("init", "--tool", "claude")
+        self.flamin("init", "--tool", "cursor")
+        rid = self.last_request()
         self.flamin("approve", rid, "--no")
-        self.flamin("doctor", "--fix", "--tool", "claude", "--prune", expect=None)
-        self.assertTrue((self.root / ".codex" / "config.toml").exists())
-        self.assertEqual(self.state()["tools"], ["claude", "codex", "cursor"])
+        self.flamin("init", "--tool", "cursor")
+        self.assertTrue((self.root / ".claude/settings.json").exists())
+        self.assertEqual(self.state()["tools"], ["claude"])
 
 
 class TestRenderLineEndings(ToolProject):
     def test_crlf_checkout_is_current(self):
-        self.flamin("init", "--tool", "all")
-        for rel in (".codex/config.toml", "CLAUDE.md"):
+        self.flamin("init", "--tool", "claude")
+        for rel in (".claude/settings.json", "CLAUDE.md"):
             f = self.root / rel
             f.write_bytes(f.read_bytes().replace(b"\n", b"\r\n"))
         out = self.flamin("init")

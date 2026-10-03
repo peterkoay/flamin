@@ -36,14 +36,14 @@ This folder is the **master kit**. It never hosts a real product (`flamin doctor
 
 `flamin init` checks the Python runtime, creates a git repo if needed, creates `.flamin/` at phase 0 and version v1, writes the pre-commit backstop, renders the adapters for the AI tool you are using (see below) for this OS and writes `.gitignore` entries. It never overwrites an existing product: one folder, one product.
 
-### Which AI tool a product uses (D-47)
+### Which AI tool a product uses (D-48)
 
-A product uses only the tool(s) you choose, and flamin renders, checks and warns only for those.
+A product has one active AI tool. Its Orchestrator runs in the main chat; the seven other agents are available as workers.
 
 - `flamin init` inside Claude Code detects it (the `CLAUDECODE` marker) and prints `Adapters for claude (detected: Claude Code)`. With no marker it defaults to Claude Code. Codex and Cursor are not auto-detected: their docs name no marker for the agent's own shell, so name them with `--tool`.
-- `flamin init --tool codex` (or `cursor`) adds a second tool to an existing product; nothing is removed. `--tool all` renders all three.
-- The choice is stored in `.flamin/state.json` (`tools`). Products made before this change have no `tools` entry: flamin uses the tools whose adapter files exist, as before.
-- A copy of the master kit carries the shared files of all three tools. To remove the ones a product does not use: `flamin doctor --fix --tool claude --prune`. Deleting files is an Approval Gate: the first run shows the file list and a request id, you answer `flamin approve R-000n --yes`, and the same command run again deletes them.
+- `flamin init --tool codex` (or `cursor`) selects that tool. On an existing product, changing the tool opens a request; the human answers `flamin approve R-000n --yes` in a terminal, then repeats the init command. A rejected request leaves the current tool active.
+- The choice is stored in `.flamin/state.json` (`tools` contains one name). Older products with several discoverable adapters must choose one through the same approval gate.
+- A copy of the master kit carries all three adapters. Init moves inactive directories and prompts into `.flamin/inactive-adapters/`, where the tools cannot discover them. It keeps a snapshot when switching back, including customized files. `flamin doctor` reports any stray inactive adapter and `flamin doctor --fix` archives it. `--tool all` and `--prune` are retired.
 - `flamin doctor` runs the Claude Code checks (settings files current; the PreToolUse hook run exactly as Claude Code runs it must deny a destructive command; last hook call) only when Claude Code is a product tool, the Codex checks only when Codex is, and the Cursor checks (agent and hook files current; the `preToolUse` command run the way Cursor runs it must deny a destructive command; last hook call) only when Cursor is. For a tool the product does not use it prints, for example, `Codex: not used by this product; checks skipped.` The Cursor check proves the hook command at shell level; it cannot prove that Cursor itself runs it.
 
 ### Per tool, once per machine

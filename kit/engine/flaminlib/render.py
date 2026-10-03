@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 from .util import KIT_DIR, read_text
@@ -254,6 +255,111 @@ def stale_renders(root: Path, tools="all") -> list[str]:
 
 # Files each tool's adapter owns, for pruning a tool a product does not use. AGENTS.md is shared by Codex and Cursor.
 TOOL_PATHS = {"claude": (".claude", "CLAUDE.md"), "codex": (".codex",), "cursor": (".cursor",)}
+DISCOVERY_PATHS = (".claude", ".codex", ".cursor", "CLAUDE.md", "AGENTS.md")
+
+
+def snapshot_discovery(root: Path) -> Path:
+    """Preserve exact visible adapter files before a human-approved switch."""
+    base = root / ".flamin" / "inactive-adapters"
+    n = 1
+    while (base / f"switch-backup-{n:04d}").exists():
+        n += 1
+    snap = base / f"switch-backup-{n:04d}"
+    for rel in DISCOVERY_PATHS:
+        source = root / rel
+        if not source.exists():
+            continue
+        target = snap / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, target)
+        else:
+            shutil.copy2(source, target)
+    return snap
+
+
+def rollback_discovery(root: Path, snap: Path) -> None:
+    """Set discoverable paths back to their pre-switch contents; keep failed files archived."""
+    failed = snap / "failed-attempt"
+    for rel in DISCOVERY_PATHS:
+        current = root / rel
+        if current.exists():
+            target = failed / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(current), str(target))
+        original = snap / rel
+        if original.exists():
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if original.is_dir():
+                shutil.copytree(original, target)
+            else:
+                shutil.copy2(original, target)
+
+
+def isolate_tool(root: Path, selected: str) -> list[str]:
+    """Keep one adapter discoverable; retain complete inactive directories outside tool search paths."""
+    archive = root / ".flamin" / "inactive-adapters"
+    moved = []
+    for tool in ALL_TOOLS:
+        if tool == selected:
+            continue
+        paths = list(TOOL_PATHS[tool])
+        if tool in ("codex", "cursor") and selected == "claude":
+            paths.append("AGENTS.md")
+        for rel in paths:
+            source = root / rel
+            if not source.exists():
+                continue
+            slot = archive / tool
+            slot.mkdir(parents=True, exist_ok=True)
+            n = 1
+            while (slot / f"{n:04d}" / rel).exists():
+                n += 1
+            target = slot / f"{n:04d}" / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(target))
+            moved.append(rel)
+    # Root AGENTS.md is shared by Codex and Cursor; archive it once when Claude is selected.
+    if selected == "claude" and (root / "AGENTS.md").exists():
+        source = root / "AGENTS.md"
+        slot = archive / "shared"
+        n = 1
+        while (slot / f"{n:04d}" / "AGENTS.md").exists():
+            n += 1
+        target = slot / f"{n:04d}" / "AGENTS.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        moved.append("AGENTS.md")
+    paths = list(TOOL_PATHS[selected])
+    if selected in ("codex", "cursor"):
+        paths.append("AGENTS.md")
+    for rel in paths:
+        target = root / rel
+        if target.exists():
+            continue
+        snapshots = sorted(archive.glob(f"*/[0-9][0-9][0-9][0-9]/{rel}"))
+        if snapshots:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if snapshots[-1].is_dir():
+                shutil.copytree(snapshots[-1], target)
+            else:
+                shutil.copy2(snapshots[-1], target)
+    # Only Claude Code supports selecting the Orchestrator as the main-session agent.
+    # A Codex/Cursor agent named orchestrator would be a discoverable sub-agent.
+    forbidden = {"codex": ".codex/agents/orchestrator.toml",
+                 "cursor": ".cursor/agents/orchestrator.md"}.get(selected)
+    if forbidden and (root / forbidden).exists():
+        source = root / forbidden
+        slot = archive / selected
+        n = 1
+        while (slot / f"{n:04d}" / forbidden).exists():
+            n += 1
+        target = slot / f"{n:04d}" / forbidden
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        moved.append(forbidden)
+    return moved
 
 
 def tool_files(root: Path, tool: str) -> list[str]:

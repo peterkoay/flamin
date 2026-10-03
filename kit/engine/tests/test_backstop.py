@@ -106,7 +106,9 @@ class TestDoctorAndKit(Project):
 
 class TestAdapters(Project):
     def test_render_all_tools(self):
-        self.init("all")
+        self.init("claude")
+        from flaminlib.render import render_all
+        render_all(self.root, "all")  # inspect adapter templates independently of product selection
         s = json.loads(self.read(".claude/settings.json"))
         self.assertEqual(s["agent"], "orchestrator")
         self.assertEqual(s["env"]["CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"], "1")
@@ -136,7 +138,7 @@ class TestAdapters(Project):
         gi = self.read(".gitignore")
         for e in (".flamin/audit/", ".claude/settings.local.json", ".cursor/hooks.json", ".env"):
             self.assertIn(e, gi)
-        self.assertIn("already current", self.flamin("init", "--tool", "all"))
+        self.assertIn("One product uses one AI tool", self.flamin("init", "--tool", "all", expect=1))
 
 
 class TestUpgrade(Project):

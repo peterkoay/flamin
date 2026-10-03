@@ -142,6 +142,12 @@ Noted during alignment: `.codex/config.toml` had been rewritten outside the buil
 
 Not verified: Codex and Cursor auto-detection. Their docs name no marker for the agent's own shell, so both must be named with `--tool`. A kit copy still carries the shared Codex and Cursor files; `flamin doctor --fix --tool claude --prune` removes them through the delete gate.
 
+### D-48 exclusive tool selection (2026-10-02)
+
+D-48 supersedes the multi-tool and prune behavior recorded above. `flamin init` selects one tool and archives all other discoverable adapters under `.flamin/inactive-adapters/`. An existing product switch opens a `tool-switch` request; only a human terminal answer allows it. The tests in `kit/engine/tests/test_tools.py` cover copied master adapters, all three selections, rejected and approved switches, preservation of customized files, doctor repair and override blocking, wrong-tool hooks, and ambiguous legacy state. `flamin kit-maintenance test` is the release check for these changes.
+
+The required `flamin kit-maintenance test` gate passed and recorded the tested kit manifest at **00:25:24 on 2026-10-03 (Malaysia time)**. A read-only check found 147 tests in the engine suite, confirmed that the recorded SHA-256 and current `kit/MANIFEST` SHA-256 both equal `f113c8f0c7225bc7a42042277779cfb32fd2ca5bf7c3113330d012105256c2e0`, and found no kit file mismatches (`manifest.verify_tree()` returned `[]`). The read-only check did not rerun the suite. Live Cursor behavior and Linux/macOS execution remain unverified, as described in §3.
+
 ## 4c. Codex shell environment alignment (2026-10-02)
 
 The local shell environment policy is now part of the canonical Codex adapter.

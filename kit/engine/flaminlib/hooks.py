@@ -80,7 +80,17 @@ def run(event: str, tool: str, stdin_text: str | None = None) -> int:
     p = Product(root, tool=tool)
     try:
         call = normalize(tool, native, payload, p)
-        dec = evaluate(p, call, event)
+        if p.store.exists():
+            from .cmds import inferred_tools
+            active = p.store.load("state").get("tools") or inferred_tools(root)
+        else:
+            active = None
+        if active is not None and active != [tool] and _is_pre(tool, native, event):
+            dec = Decision("deny", f"{tool} is not this product's active AI tool "
+                           f"({', '.join(active) or 'ambiguous legacy state'}). "
+                           "Switch with `flamin init --tool <name>` and human approval.")
+        else:
+            dec = evaluate(p, call, event)
     except Exception as exc:  # noqa: BLE001 - fail closed on pre-events, loudly
         call = Call(tool=tool, event=native, raw=payload)
         pre = _is_pre(tool, native, event)

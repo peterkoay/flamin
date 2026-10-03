@@ -68,7 +68,10 @@ def os_name() -> str:
 # ====================================================================== init
 
 def cmd_init(p: Product, args) -> int:
-    from .render import render_all, tool_tuple
+    from .render import isolate_tool, render_all, rollback_discovery, snapshot_discovery
+
+    if args.tool == "all":
+        raise FlaminError("One product uses one AI tool. Choose --tool claude, codex, or cursor.")
 
     out(f"flamin init (kit {kit_version()}) on {os_name()}")
     out(f"  1. Kit runtime: Python {platform.python_version()} ({sys.executable}); command for this OS: {python_command()}")
@@ -103,17 +106,39 @@ def cmd_init(p: Product, args) -> int:
     # 5. pre-commit
     msg = install_precommit(p.root)
     out(f"  5. {msg}")
-    # 6. adapters: the tool(s) this product uses. `--tool` adds a tool; it never silently removes one.
-    if args.tool:
-        chosen, why = args.tool, f"--tool {args.tool}"
-    elif not created and product_tools(p)[0]:
-        chosen, why = product_tools(p)  # existing product: keep its tools (legacy: the adapters it has)
+    # 6. Exactly one discoverable adapter. Switching an existing product is a human gate.
+    if created:
+        chosen, why = (args.tool, f"--tool {args.tool}") if args.tool else detect_tool()
     else:
-        chosen, why = detect_tool()
-    tools = record_tools(p, list(tool_tuple(chosen)))
-    changed = render_all(p.root, tools)
-    label = "all" if chosen == "all" else ", ".join(tool_tuple(chosen))
-    out(f"  6. Adapters for {label} ({why}): " + (", ".join(changed) if changed else "already current"))
+        current, source = product_tools(p)
+        if len(current) != 1 and not args.tool:
+            raise FlaminError("Product tool is ambiguous. Run `flamin init --tool claude|codex|cursor` and "
+                              "answer the tool-switch gate to choose one tool.")
+        chosen, why = (args.tool, f"--tool {args.tool}") if args.tool else (current[0], source)
+        if current != [chosen]:
+            switch_req = switch_tool(p, current, chosen)
+            if switch_req is None:
+                return 0
+    switch_snapshot = snapshot_discovery(p.root) if not created and current != [chosen] else None
+    try:
+        moved = isolate_tool(p.root, chosen)
+        changed = render_all(p.root, chosen)
+        tools = record_tools(p, [chosen], replace=True)
+        if switch_snapshot is not None:
+            finish_switch(p, switch_req, current, chosen)
+    except Exception:
+        if switch_snapshot is not None:
+            rollback_discovery(p.root, switch_snapshot)
+            if p.store.load("state").get("tools") != current:
+                record_tools(p, current, replace=True)
+            with p.tx() as (_state, appr):
+                appr["requests"][switch_req["id"]].pop("consumed", None)
+        raise
+    if not created and (current != [chosen] or hook_changed(chosen, changed)):
+        (p.fdir / "tmp" / f"heartbeat-{chosen}").unlink(missing_ok=True)
+    out(f"  6. Adapters for {chosen} ({why}): " + (", ".join(changed) if changed else "already current"))
+    if moved:
+        out("     Archived inactive adapters: " + ", ".join(moved))
     note = codex_action_note(tools, changed)
     if note:
         out("     " + note)
@@ -627,25 +652,58 @@ def cmd_doctor(p: Product, args) -> int:
     elif args.clear_stale_lock:
         notes.append("No stale lock to clear (the engine never removes a live lock).")
     # adapters: only the tools this product uses
-    tools, source = product_tools(p, args.tool)
+    tools, source = product_tools(p)
+    if args.tool and args.tool != (tools[0] if len(tools) == 1 else None):
+        problems.append("`flamin doctor --tool` cannot switch this product. Use `flamin init --tool <name>` "
+                        "and answer its tool-switch gate.")
+    if p.store.exists() and len(tools) != 1:
+        problems.append("Product tool is ambiguous. Use `flamin init --tool <name>` and answer the tool-switch gate.")
     notes.append(f"AI tools checked: {', '.join(TOOL_LABELS[t] for t in tools) or 'none'} ({source})")
     if args.prune:
-        if not args.tool:
-            problems.append("--prune needs --tool: name the tool(s) to keep, for example `--tool claude`.")
-        else:
-            prune_tools(p, tools, notes, problems)
+        problems.append("`--prune` is retired. `flamin init --tool <name>` archives inactive adapters after approval.")
+    repaired_hook = None
     if p.store.exists() or not args.kit:
-        if args.fix:
-            changed = render_all(root, tools)
+        if args.fix and len(tools) == 1 and not (args.tool and args.tool != tools[0]):
+            from .render import isolate_tool
+            hook_before = read_text(root / HOOK_FILES[tools[0]])
+            archived = isolate_tool(root, tools[0])
+            if archived:
+                notes.append("Archived inactive adapters: " + ", ".join(archived))
+            changed = render_all(root, tools[0])
+            if hook_before != read_text(root / HOOK_FILES[tools[0]]):
+                repaired_hook = tools[0]
             if changed:
                 notes.append("Re-rendered: " + ", ".join(changed))
                 note = codex_action_note(tools, changed)
                 if note:
                     notes.append(note)
-            if p.store.exists() and args.tool and not args.prune:
-                record_tools(p, tools)
+        if len(tools) == 1:
+            from .render import ALL_TOOLS, TOOL_PATHS
+            for inactive in ALL_TOOLS:
+                if inactive == tools[0]:
+                    continue
+                for rel in TOOL_PATHS[inactive]:
+                    if (root / rel).exists():
+                        problems.append(f"Inactive adapter remains discoverable: {rel}. Run `flamin doctor --fix` "
+                                        "to archive it outside tool discovery.")
+            if tools[0] == "claude" and (root / "AGENTS.md").exists():
+                problems.append("Inactive adapter remains discoverable: AGENTS.md. Run `flamin doctor --fix` "
+                                "to archive it outside tool discovery.")
+            forbidden = {"codex": ".codex/agents/orchestrator.toml",
+                         "cursor": ".cursor/agents/orchestrator.md"}.get(tools[0])
+            if forbidden and (root / forbidden).exists():
+                problems.append(f"Orchestrator sub-agent remains discoverable: {forbidden}. "
+                                "Run `flamin doctor --fix` to archive it.")
         for s in stale_renders(root, tools):
             problems.append(f"Adapter file out of date: {s} (run `flamin init --tool <name>` or `flamin doctor --fix`)")
+    probe_beats = {}
+    for tool in set(tools) | ({"codex"} if args.probe_codex else set()):
+        beat = p.fdir / "tmp" / f"heartbeat-{tool}"
+        if beat.exists():
+            stat = beat.stat()
+            probe_beats[tool] = (beat.read_bytes(), stat.st_atime_ns, stat.st_mtime_ns)
+        else:
+            probe_beats[tool] = None
     if "claude" in tools:
         claude_checks(root, notes, problems, product=p.store.exists())
     if "codex" in tools or args.probe_codex:
@@ -658,6 +716,14 @@ def cmd_doctor(p: Product, args) -> int:
         cursor_checks(root, notes, problems, product=p.store.exists())
     else:
         notes.append("Cursor: not used by this product; checks skipped.")
+    # Doctor's self-check calls the hooks, but must not claim a live AI session heartbeat.
+    for tool, prior in probe_beats.items():
+        beat = p.fdir / "tmp" / f"heartbeat-{tool}"
+        if prior is None or tool == repaired_hook:
+            beat.unlink(missing_ok=True)
+        else:
+            beat.write_bytes(prior[0])
+            os.utime(beat, ns=(prior[1], prior[2]))
     exec_bit_check(root, problems)
     # manifest
     for pr in mf.verify_tree(root):
@@ -713,7 +779,7 @@ def kit_cleanliness(root: Path) -> list[str]:
 # ====================================================================== upgrade
 
 def cmd_upgrade(p: Product, args) -> int:
-    from .render import render_all
+    from .render import isolate_tool, render_all
 
     src = Path(args.source).resolve()
     if not (src / "kit" / "VERSION").exists():
@@ -740,14 +806,20 @@ def cmd_upgrade(p: Product, args) -> int:
     if not args.yes:
         out("Nothing changed. Run again with --yes to apply (human-only).")
         return 0
+    tools, _ = product_tools(p)
+    if len(tools) != 1:
+        raise FlaminError("Upgrade stopped: product tool is ambiguous. Choose one with "
+                          "`flamin init --tool <name>` and answer the tool-switch gate first.")
     for f in changed:
         dst = p.root / f
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src / f, dst)
     for f in removed:
         (p.root / f).unlink(missing_ok=True)
-    tools, _ = product_tools(p)
-    rend = render_all(p.root, tools, only_existing=True)
+    isolate_tool(p.root, tools[0])
+    rend = render_all(p.root, tools[0])
+    if hook_changed(tools[0], rend):
+        (p.fdir / "tmp" / f"heartbeat-{tools[0]}").unlink(missing_ok=True)
     if p.store.exists():
         p.log("upgrade", target="kit/", reason=f"{old_v} -> {new_v}: {len(changed)} changed, {len(removed)} removed",
               approver="human via terminal")
@@ -927,7 +999,8 @@ def cmd_kit_maintenance(p: Product, args) -> int:
     tests = KIT_DIR / "engine" / "tests"
     r = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-s", str(tests), "-t", str(tests)],
                        cwd=str(root), capture_output=True, text=True)
-    for line in (r.stdout + r.stderr).strip().splitlines()[-3:]:
+    report = (r.stdout + r.stderr).strip().splitlines()
+    for line in (report if r.returncode != 0 else report[-3:]):
         out("  " + line)
     if r.returncode != 0:
         raise FlaminError("Engine tests failed; kit/MANIFEST was not refreshed. Fix the kit and run the tests again.")
@@ -954,6 +1027,12 @@ def maintenance_test_check(root: Path, new_of) -> list[str]:
 # ====================================================================== product tools
 
 TOOL_LABELS = {"claude": "Claude Code", "codex": "Codex", "cursor": "Cursor"}
+HOOK_FILES = {"claude": ".claude/settings.local.json", "codex": ".codex/config.toml",
+              "cursor": ".cursor/hooks.json"}
+
+
+def hook_changed(tool: str, changed: list[str]) -> bool:
+    return any(rel.startswith(HOOK_FILES[tool]) for rel in changed)
 
 
 def detect_tool() -> tuple[str, str]:
@@ -998,6 +1077,29 @@ def record_tools(p: Product, tools: list[str], replace: bool = False) -> list[st
         current = [] if replace else state.get("tools") or []
         state["tools"] = list(tool_tuple(set(current) | set(tools)))
         return state["tools"]
+
+
+def switch_tool(p: Product, current: list[str], target: str) -> dict | None:
+    """The human approves the exact current-to-target transition before any adapter moves."""
+    payload = f"switch active AI tool from {','.join(current) or '(unset)'} to {target}"
+    with p.tx() as (state, appr):
+        req = ap.approved_unused(appr, "tool-switch", payload)
+        if not req:
+            req = ap.open_request(p.store, state, appr, "tool-switch",
+                                  f"Switch this product to {TOOL_LABELS[target]}", payload,
+                                  [f"1. Understood: use {TOOL_LABELS[target]} for this product",
+                                   "2. Planned:    archive inactive adapters, restore and render the selected adapter",
+                                   "3. Because:    switching tools changes the active agent and hook configuration"],
+                                  data={"from": current, "to": target})
+            out(ap.format_request(req))
+            return None
+    return req
+
+
+def finish_switch(p: Product, req: dict, current: list[str], target: str) -> None:
+    with p.tx() as (_state, appr):
+        appr["requests"][req["id"]]["consumed"] = iso()
+    p.log("tool-switch", target=target, reason=f"from {current}", approver=req.get("approver"), request=req["id"])
 
 
 def codex_action_note(tools, changed) -> str | None:
