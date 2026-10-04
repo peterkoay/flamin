@@ -449,7 +449,10 @@ def check_shell(p: Product, c: Call) -> Decision:
     cmd = c.command or ""
     if c.agent and c.agent_source == "hook" and c.agent in WORKERS and not pol.agent_has_shell(c.agent):
         return Decision("deny", f"The {c.agent} agent has no shell tool (D-41). Every shell call from it is denied; "
-                        "report back to the Orchestrator instead.")
+                        "stop the shell operation and report its full reason to the Orchestrator. "
+                        "Authorized native editing of your owned documents remains permitted. "
+                        "Request current file context or engine command execution from the Orchestrator; "
+                        "do not use shell reads or change identity to evade the denial.")
     what = pol.human_only(cmd)
     if what:
         args = pol.normalize_flamin_args(cmd) or ""

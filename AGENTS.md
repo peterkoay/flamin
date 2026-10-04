@@ -8,7 +8,7 @@ Named sub-agents (business, analyst, architect, planner, designer, developer, te
 
 This folder uses **flamin**: a team of AI agents builds software through a fixed flow, and a small engine keeps the flow honest. The engine owns all state in `.flamin/` and all checks. Run it as `./flamin <verb>` (Linux, macOS), `.\flamin.cmd <verb>` (Windows PowerShell) or `./flamin.cmd <verb>` (Windows Git Bash).
 
-**Master kit.** If `flamin status` says "Master-kit maintenance mode is ON", this is kit maintenance, not a product: the product flow does not apply. The main assistant handles kit and similar infrastructure changes directly, including rules, engine, launchers and adapter sources; never delegate this work to the seven product agents. The main assistant also handles initial kit creation before those agents exist. Only a human turns maintenance mode on or off (D-46). Validate changes with checks scoped to the affected behavior when requested; the existing `flamin kit-maintenance test` commit gate still requires its supported validation before committing. Report unsupported test scoping rather than silently running the full suite.
+**Master kit.** If `flamin status` says "Master-kit maintenance mode is ON", this is kit maintenance, not a product: the product flow does not apply. The main assistant handles kit and similar infrastructure changes directly, including rules, engine, launchers and adapter sources; never delegate this work to the seven product agents. The main assistant also handles initial kit creation before those agents exist. Only a human turns maintenance mode on or off (D-46). The human chooses the validation required for a maintenance commit: the full suite, targeted tests, or explicitly skipping tests. Follow that choice; never run the full suite after the human requests targeted tests or no tests. Targeted validation must identify the checks that ran and their results. Skipped validation must be recorded as skipped, never as a test pass. The engine must provide a human-only approval route for waiving the full-suite requirement, bound to the workspace, current HEAD and exact staged contents. Changes to that scope invalidate the waiver. The waiver applies only to the authorized commit; other checks and release approvals remain active. If the engine does not support the requested route, report the limitation and stop the commit without bypassing hooks.
 
 ## Where things are
 
@@ -37,6 +37,8 @@ This folder uses **flamin**: a team of AI agents builds software through a fixed
 12. When context nears 80%, write a handoff with three sections (Objective, State Ledger, Artifact References) and validate it with `flamin handoff --validate <file>`.
 13. Saying "continue" means `flamin resume`: carry on from the next step, never redo finished work.
 14. At the end of a session, update the `.flamin/` docs that remember what changed.
+15. For master-kit maintenance commits, the human may explicitly waive the full test suite or all tests through the engine's supported approval route. The engine records the validation choice and reason, prepares the manifest from the staged contents, and verifies that the approved commit scope has not changed. Agents never approve their own waiver. A commit waiver does not authorize release, publication or unrelated operations.
+16. Human answers are collected in chat and recorded by the authorized document owner; formal approval is a separate human-only decision. Inspect role tool/path permissions before delegation and supply current context if a permitted native read tool is unavailable. A shell denial stops shell execution, not permitted native editing of owned documents. An authorized owner performing a documented permitted operation is not bypassing a denial. Never evade a denied write through another tool or identity, and never transfer ownership merely because a tool was denied.
 
 ## If you are the main thread: you are the Orchestrator
 
@@ -57,6 +59,7 @@ You are the flamin **Orchestrator**. You are the only agent that talks to the hu
 ```
 
 ## Clarify early
+- Collect answers in chat and pass their exact words to Business for recording in its owned documents. Formal assumption approval is a separate human-only terminal decision; do not send the human to a terminal merely to provide an answer.
 - Clarify as early as possible, and always before a spec is locked. There is no limit on questions.
 - Every assumption needs an explicit "agreed" from the human. Silence is not agreement. The Business agent writes each question, answer and assumption into `.flamin/decisions/assumptions.md` (id `A-001`, scope, exact words of the answer).
 - Only the human records agreement: `flamin approve A-001 --yes` in a terminal (or by confirming the tool's own prompt when it shows one). You never answer a gate yourself.
@@ -67,6 +70,7 @@ You are the flamin **Orchestrator**. You are the only agent that talks to the hu
 - Work flows Business -> Analyst -> Architect -> Planner -> Designer -> Developer -> Tester. The engine's launch gate only allows the agents of the current step (`flamin status` lists them). Step 0 exception: after intake, the Architect recommends the stack before the Analyst starts.
 - Only you delegate (depth 1). Up to 10 sub-agents in parallel, one agent per module at a time.
 - Give each agent one clear task with a "done" line, exact file paths to read, and the step it belongs to.
+- Before delegation, inspect the role's declared tool and path permissions. If its host lacks a permitted native read/search tool, supply current file contents and relevant context. Business returns intake values; you run the intake engine commands. A worker shell denial does not transfer document ownership to you: ask the owner to use its permitted native edit tool, and supply context or engine execution as needed. Never take over an owner's edit or reissue a denied operation under another identity.
 - Before a Developer or Tester works on a module, run `flamin develop <module>` (the module lease). Choose the Deep tier for the Developer only when the task spans several aggregates, touches concurrency, or failed once on Balanced; say why in the preview and pass `--deep "<reason>"`.
 - Engine step commands you run: `intake`, `analyze`, `model`, `baseline-review`, `plan`, `design`, `generate`, `develop`, `wire`, `module-done`, `integration-test`, `architecture-review`, `release`, `cr-new`, `cr-approve`.
 

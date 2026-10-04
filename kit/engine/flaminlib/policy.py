@@ -189,7 +189,7 @@ def _without_document_literals(command: str) -> str:
     Execution strings (subprocess, eval, etc.) are deliberately left intact.
     This is only a false-positive filter, not a general shell parser.
     """
-    match = re.fullmatch(r"\s*@'\r?\n([\s\S]*?)\r?\n'@\s*\|\s*python\s+(?:-B\s+)?-\s*", command)
+    match = re.match(r"\s*@'\r?\n([\s\S]*?)\r?\n'@\s*\|\s*python\s+(?:-B\s+)?-(?=$|[\s;|&])", command)
     if not match:
         return command
     body = match.group(1)

@@ -159,3 +159,26 @@ To explicitly skip tests, omit the test command and use `flamin kit-maintenance 
 Authorization refreshes and stages only `kit/MANIFEST` from indexed blobs. It refuses to overwrite unstaged manifest edits and preserves other staged/unstaged files. It binds workspace, HEAD, paths, contents and modes; index/HEAD changes invalidate it. Protected `.flamin-maintenance/approvals.json` records the choice, reason, timestamp and human full-suite waiver. Scoped tests are never reported as a full-suite pass; skipped tests are never reported as a pass. Manifest, secret, lock and other applicable commit checks remain active. Release/publication approvals remain separate. Snapshots currently require resolved regular files; symlinks, submodules and conflicted indexes are rejected.
 
 The existing full-suite command remains available without --scope, only when the human chooses it. Hook policy distinguishes literal document text from executed human-only commands for supported Python heredoc document writes; unknown forms remain conservative.
+
+## Answers, approval and worker tool routing
+
+The human answers questions in chat. Business records exact answers in its owned Markdown using native editing and returns intake values to Orchestrator, which runs intake engine commands. Formal assumption approval is a separate human-only terminal action.
+
+Before delegation, inspect role tool/path permissions. Native read/search tools differ by host; Orchestrator supplies current file contents when the worker has no permitted read route. Codex workers with writing permission use apply_patch within their ownership. A role without shell permission cannot use exec_command, PowerShell, Bash or shell reads. D-41 denies those calls while preserving authorized native document editing. Orchestrator supplies context and engine execution, but cannot take over the owner's document edit. This differs from rerouting a denied write or switching identity to evade a hook.
+
+Product adapters receive the repair through human-run flamin upgrade, not direct edits to generated files. After staging this repair in the master kit, validate only its named scopes and let the human authorize the commit:
+
+```powershell
+.\flamin.cmd kit-maintenance test --scope test_assumption_tool_routing test_round5.TestShellByAgentsWithoutShell test_round5.TestRenderRound5 test_commit_validation.TestCommitValidation.test_document_text_is_not_human_authorization_execution
+.\flamin.cmd kit-maintenance authorize-commit --validation scoped --reason "Assumption tool-routing checks passed" --yes
+.\flamin.cmd check-staged
+```
+
+Once the master repair is ready and its manifest is current, a human upgrades the existing product from its terminal:
+
+```powershell
+Set-Location C:\Users\WJKWEEJI\Code\Playground\TestPete
+.\flamin.cmd upgrade --from C:\Users\WJKWEEJI\Code\TocoAI\flamin_v3_Claude --yes
+```
+
+Then restart/reload agent instructions as needed and verify the next real chat answer is recorded by Business using native editing, with Orchestrator supplying context if reads are unavailable. Do not fabricate answers or approve assumptions to test the flow. Keep product questioning paused until the repair is installed. Literal human-only command references in supported Python document writes are data; any genuinely executed human-only command in the trailing shell statements remains gated. Unknown or dynamic script forms remain conservative.

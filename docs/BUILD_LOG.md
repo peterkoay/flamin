@@ -156,3 +156,13 @@ Kit maintenance (D-46 mode on): flamin renders, checks and warns only for the AI
 - Corrected the maintenance-mode manifest error and added a narrow regression-backed distinction between documentation text and execution of authorization commands.
 - Preserved all original staged entries and blob IDs on codex/human-maintenance-validation. Implementation changes remain unstaged for human review and staging. No real authorization, full suite, commit, merge or hook bypass ran.
 - Targeted tests cover manifest staging, partial staging, changed files/modes/HEAD, passing/failing scoped snapshots, human-only execution and literal document text, plus maintenance/GitHub regression checks.
+
+## Assumption document ownership and host tool routing (2026-10-04)
+
+- Main assistant repaired Business intake guidance: chat answers are recorded via native edits in owned documents; intake values go to Orchestrator for engine execution. Formal approvals remain human-only.
+- Core and Orchestrator guidance require checking role tools/paths before delegation, supplying current file context where native reads are unavailable, and preserving ownership after a shell denial.
+- Codex renderer appends role-specific tool guidance: native apply_patch for owned documents where editing is permitted, no shell reads for no-shell workers, and no universal assumption that native read/search tools exist. Neutral prompts remain host-independent.
+- D-41 still denies Business shell calls and explains the permitted native document route and Orchestrator support. Ownership and approval policies are unchanged.
+- Corrected the literal-document false-positive filter to handle trailing commands without hiding actual human-only execution. Literal upgrade/intake/approve references in authorized document writes pass; actual execution, dynamic expressions and arbitrary scripts remain conservative.
+- Nine targeted tests passed: routing, shell/patch ownership, literal document references, compound execution denials, earlier documentation regression and rendering. Engine renderer refreshed existing adapters/rules only; unrelated untracked files remain untouched.
+- No staging, actual human authorization, product state, fabricated answer/approval, full suite, commit, merge or product upgrade ran. Additional live TestPete verification remains deferred until human upgrade. Its prior successful Business A-001 patch is existing live evidence. Original questioning remains paused.
