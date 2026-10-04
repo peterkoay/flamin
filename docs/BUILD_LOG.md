@@ -118,3 +118,41 @@ Kit maintenance (D-46 mode on): flamin renders, checks and warns only for the AI
 - Historical Git commits remain unchanged.
 - Validation: reviewed the documentation diff and checked for whitespace errors
   and remaining occurrences of the old label.
+
+## Main assistant maintenance ownership and approval rules (2026-10-03)
+
+- Human approved direct main-assistant ownership of kit bootstrap, kit changes
+  and similar infrastructure; the seven named agents handle product work.
+- Updated core rules 7–9 and the Orchestrator source to distinguish read-only
+  external inspection from external changes and paid calls, including GitHub.
+  Approval is scoped to the exact operation and must support maintenance and
+  product modes. Hook denials still stop the denied action without bypass.
+- These are rule requirements; the missing maintenance GitHub approval route
+  has not been implemented by this wording change.
+- Human requested scoped validation only. The current maintenance test command
+  has no scope option; the full suite and commit gate were not run or claimed.
+
+## Mode-aware maintenance hooks (2026-10-03)
+
+- Main assistant implemented human-approved maintenance approval routing in
+  `maintenance.py`, `hooks.py` and `flow.py`. M-prefixed requests live in the
+  protected, git-ignored `.flamin-maintenance/` directory, never in product state.
+- Requests bind to the resolved workspace, maintenance mode, action kind and
+  exact payload. They are single-use, preserve duplicate call handling, and use
+  an exclusive lock. Human answers use `flamin approve M-0001 --yes` or `--no`
+  in a terminal; agent answers and maintenance prompt-token creation are denied.
+- Recognized literal GitHub repository reads via curl, PowerShell and gh API
+  are exempt from external gates. Ambiguous requests, mutations, paid/unknown
+  external calls and unknown GitHub connector operations remain gated.
+- Main-assistant kit edits are allowed in maintenance; product-agent kit edits
+  and direct approval-store writes are denied. Product approval routing remains.
+- Validation: focused maintenance/classifier tests plus existing product gate
+  and Codex prompt regressions passed. No external actions or full suite ran;
+  the maintenance manifest/commit gate remains outstanding.
+
+## Human-controlled maintenance validation (2026-10-04)
+
+- Main assistant implemented staged-snapshot scoped tests, human-only commit authorization, index-derived manifest generation, and exact workspace/HEAD/index binding. Other protections remain active.
+- Corrected the maintenance-mode manifest error and added a narrow regression-backed distinction between documentation text and execution of authorization commands.
+- Preserved all original staged entries and blob IDs on codex/human-maintenance-validation. Implementation changes remain unstaged for human review and staging. No real authorization, full suite, commit, merge or hook bypass ran.
+- Targeted tests cover manifest staging, partial staging, changed files/modes/HEAD, passing/failing scoped snapshots, human-only execution and literal document text, plus maintenance/GitHub regression checks.

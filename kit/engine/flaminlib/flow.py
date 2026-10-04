@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -894,6 +895,29 @@ def _approver(p: Product, argv_key: str, explicit: bool) -> str:
 
 
 def cmd_approve(p: Product, args) -> int:
+    from .policy import maintenance_mode
+    if maintenance_mode(p.root):
+        from . import maintenance
+        if not args.id:
+            requests = maintenance.pending(p.root)
+            for req in requests:
+                out(ap.format_request(req))
+            if not requests:
+                out("Nothing is waiting for maintenance approval.")
+            return 0
+        if p.agent or os.environ.get("FLAMIN_AGENT") or os.environ.get("FLAMIN_TOOL") in ("claude", "codex", "cursor"):
+            raise FlaminError("Maintenance approval requires the human in a terminal; agents never answer a gate.")
+        yes = True if args.yes else False if args.no else None
+        if yes is None:
+            if not sys.stdin.isatty():
+                raise FlaminError("Maintenance approval requires --yes or --no from the human terminal.")
+            answer = input(f"Approve {args.id}? Type 'yes' or 'no': ").strip().lower()
+            if answer not in ("yes", "no"):
+                raise FlaminError("No answer means no. Nothing was changed.")
+            yes = answer == "yes"
+        status = maintenance.answer(p.root, args.id, yes)
+        out(f"{args.id} {status} by human via terminal.")
+        return 0
     if not args.id:
         with p.tx() as (state, appr):
             ap.sync_assumptions(p.root, appr)

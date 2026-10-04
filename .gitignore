@@ -5,6 +5,7 @@
 .flamin/.lock
 .flamin-backup-*/
 .flamin-kit-maintenance
+.flamin-maintenance/
 .claude/settings.local.json
 .cursor/hooks.json
 .env

@@ -5,6 +5,7 @@ Configurable policy files are deferred (DESIGN §15.4); these are the built-in d
 from __future__ import annotations
 
 import json
+import ast
 import re
 import shlex
 from functools import lru_cache
@@ -13,7 +14,7 @@ from .util import KIT_DIR, any_glob, glob_match
 
 # Only the engine writes these (Hard where a pre-write hook exists).
 STATE_PATHS = [".flamin/*.json", ".flamin/*.json.sha256", ".flamin/.lock", ".flamin/tmp/**",
-               ".flamin/audit/**", ".flamin/cache/**"]
+               ".flamin/audit/**", ".flamin/cache/**", ".flamin-maintenance/**"]
 # Enforcement layer (P-19 / D-30).
 ENFORCEMENT_PATHS = ["kit/**", "flamin", "flamin.cmd", ".gitattributes", ".claude/**", ".codex/**", ".cursor/**",
                      "CLAUDE.md", "AGENTS.md", ".git/**", ".flamin/stacks/**"]
@@ -124,6 +125,7 @@ DESTRUCTIVE_RX = [(re.compile(p), why) for p, why in DESTRUCTIVE]
 
 FLAMIN_CMD = r"(?:^|[\s;&|(`'\"])(?:[.\w:/\\-]*[/\\])?(?:flamin(?:\.cmd)?|flamin\.py)\s+"
 HUMAN_ONLY = [
+    (re.compile(FLAMIN_CMD + r"kit-maintenance\s+authorize-commit\b"), "maintenance commit authorization"),
     (re.compile(FLAMIN_CMD + r"approve\b"), "approve"),
     (re.compile(FLAMIN_CMD + r"upgrade\b"), "upgrade"),
     (re.compile(FLAMIN_CMD + r"doctor\b[^\n;&|]*--clear-stale-lock"), "clear-stale-lock"),
@@ -141,6 +143,7 @@ GATED_SHELL = [
                   r"|\bmanage\.py\s+migrate\b|\bdb:migrate\b|\b(?:npm|yarn|pnpm)\s+run\s+migrate|\btypeorm\s+migration:run\b|\bsequelize\s+db:migrate\b"),
     ("app-store", r"\bfastlane\s+(?:deliver|pilot|supply|upload_to_\w+)\b|\beas\s+submit\b|\bxcrun\s+altool\b.*--upload|\biTMSTransporter\b|\btransporter\b"),
     ("external-api", r"\b(?:curl|wget|http|httpie)\s+[^\n]*https?://(?!localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"
+                     r"|\bgh\s+(?:api|release|repo|pr|issue)\b"
                      r"|(?i:\bInvoke-(?:WebRequest|RestMethod)\b[^\n]*https?://(?!localhost|127\.0\.0\.1))"
                      r"|\beas\s+build\b|\bgcloud\s+builds\b|\baws\s+\w+|\baz\s+\w+|\bfirebase\s+deploy\b|\bvercel\b|\bnetlify\s+deploy\b"),
     ("secret-change", r"(?:>|>>|\btee\b|\bcp\b|\bmv\b|(?i:Set-Content|Add-Content|Out-File))[^\n]*(?:\.env\b|\.pem\b|\.key\b|secrets/|credentials)"),
@@ -155,6 +158,7 @@ SHELL_WRITE = re.compile(
 
 
 def human_only(command: str) -> str | None:
+    command = _without_document_literals(command)
     for rx, what in HUMAN_ONLY:
         if rx.search(command):
             return what
@@ -173,8 +177,105 @@ def gated_shell(command: str) -> str | None:
         return None  # engine commands gate themselves
     for kind, rx in GATED_SHELL_RX:
         if rx.search(command):
+            if kind == "external-api" and github_read(command):
+                continue
             return kind
     return None
+
+
+def _without_document_literals(command: str) -> str:
+    """Exclude constant text written by a Python heredoc to an opened document.
+
+    Execution strings (subprocess, eval, etc.) are deliberately left intact.
+    This is only a false-positive filter, not a general shell parser.
+    """
+    match = re.fullmatch(r"\s*@'\r?\n([\s\S]*?)\r?\n'@\s*\|\s*python\s+(?:-B\s+)?-\s*", command)
+    if not match:
+        return command
+    body = match.group(1)
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return command
+    lines = body.encode('utf-8').splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    spans = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.With):
+            continue
+        handles = set()
+        for item in node.items:
+            expr = item.context_expr
+            if (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute)
+                    and expr.func.attr == 'open' and isinstance(item.optional_vars, ast.Name)
+                    and any(isinstance(arg, ast.Constant) and arg.value in ('a', 'w') for arg in expr.args)):
+                handles.add(item.optional_vars.id)
+        # Only direct writes within the with block, without nested execution.
+        for statement in node.body:
+            call = statement.value if isinstance(statement, ast.Expr) else None
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name) and call.func.value.id in handles
+                    and call.func.attr == 'write' and len(call.args) == 1
+                    and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str)):
+                literal = call.args[0]
+                spans.append((offsets[literal.lineno - 1] + literal.col_offset,
+                              offsets[literal.end_lineno - 1] + literal.end_col_offset))
+    sanitized = body.encode('utf-8')
+    for start, end in sorted(spans, reverse=True):
+        sanitized = sanitized[:start] + b"''" + sanitized[end:]
+    return command[:match.start(1)] + sanitized.decode('utf-8') + command[match.end(1):]
+
+
+def github_read(command: str) -> bool:
+    """Recognize literal GitHub reads only; compound/dynamic requests remain gated."""
+    if re.search(r'[;|`\n]|\$\(|&&|\|\|', command):
+        return False
+    if re.search(r'(?i)--(?:data\S*|upload-file|form\S*)\b|\s-[dFT]\b|-(?:Body|InFile)\b', command):
+        return False
+    methods = re.findall(r'(?i)(?:-Method\s+|--request\s+|-X\s*)([\w]+)', command)
+    if any(m.upper() not in ('GET', 'HEAD') for m in methods):
+        return False
+    if re.search(r'(?i)\bgh\s+api\b', command):
+        # GET with no fields is the only supported gh API read form.
+        return bool(re.fullmatch(r'\s*gh\s+api\s+(?:--method\s+(?:GET|HEAD)\s+)?'
+            r'(?:/)?repos/[\w.-]+/[\w.-]+/(?:releases|branches|commits|tags)(?:/[\w./%-]+)?\s*', command))
+    urls = re.findall(r'https?://[^\s\'\"}]+', command)
+    if len(urls) != 1 or not re.fullmatch(
+            r'https://api\.github\.com/repos/[\w.-]+/[\w.-]+/(?:releases|branches|commits|tags)(?:/[\w./%-]+)?', urls[0]):
+        return False
+    # Exactly one recognized HTTP invocation, with no second shell command.
+    calls = re.findall(r'(?i)\b(?:curl|wget|http|httpie|Invoke-WebRequest|Invoke-RestMethod)\b', command)
+    if len(calls) != 1 or calls[0].lower() not in ('curl', 'invoke-webrequest', 'invoke-restmethod'):
+        return False
+    if calls[0].lower() == 'curl' and re.search(r'\s-[A-Za-z]*[dFTX][A-Za-z]+\b', command):
+        return False
+    if calls[0].lower() == 'curl':
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return False
+        if not tokens or tokens[0] != 'curl':
+            return False
+        i = 1
+        while i < len(tokens):
+            token = tokens[i]
+            if token in ('-H', '--header', '-X', '--request'):
+                i += 2
+                continue
+            if token not in ('-I', '--head', '-s', '-S', '-sS', '--silent', '--show-error', '--fail', urls[0]):
+                return False
+            i += 1
+    else:
+        # A literal URI, method and optional literal header pair; expressions stay gated.
+        literal = r'''(?:'[^'$`]*'|"[^"$`]*")'''
+        endpoint = re.escape(urls[0])
+        if not re.fullmatch(r'(?i)\s*(?:\$\w+\s*=\s*)?Invoke-(?:WebRequest|RestMethod)\s+'
+                r'(?:-Method\s+(?:GET|HEAD)\s+)?-Uri\s+(?:' + endpoint + r'|"' + endpoint + r'"|\'' + endpoint + r"\')"
+                r'(?:\s+-Headers\s+@\{\s*' + literal + r'\s*=\s*' + literal + r'\s*\})?\s*', command):
+            return False
+    return True
 
 
 def shell_write_targets(command: str) -> list[str]:

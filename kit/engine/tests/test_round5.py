@@ -125,6 +125,8 @@ class TestMaintenanceMode(Project):  # D-46
         self.assertIn("ON", self.flamin("kit-maintenance", "on"))
         self.assertIn("maintenance mode is ON", self.flamin("status"))
         code, _, _ = self.hook("claude", self.claude_write("kit/rules/core.md", "x\n", agent="developer"))
+        self.assertEqual(code, 2)  # infrastructure belongs to the main assistant
+        code, _, _ = self.hook("claude", self.claude_write("kit/rules/core.md", "x\n", agent="orchestrator"))
         self.assertEqual(code, 0)
         for shut in (".claude/settings.json", "CLAUDE.md", ".gitattributes", ".git/config"):
             code, _, _ = self.hook("claude", self.claude_write(shut, "x\n", agent="developer"))

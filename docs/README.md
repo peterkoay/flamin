@@ -121,7 +121,7 @@ flamin kit-maintenance test     # after the change: runs the engine tests, refre
 flamin kit-maintenance off      # a human, in a terminal
 ```
 
-While the mode is on, kit files (`kit/`, the launchers) are open to agents; tool config, rules files and `.git/` stay shut. The pre-commit check refuses kit changes that did not pass `flamin kit-maintenance test`. `flamin init` is refused and `flamin doctor --kit` fails until the mode is off, so a shipped kit never carries the flag. How a maintenance session gets file-editing tools is not decided yet (DESIGN D-46); today a human edits, or grants the session shell access.
+While the mode is on, the main assistant handles kit files (`kit/`, the launchers) directly; the seven product agents do not edit kit infrastructure. Generated tool config and rules files are updated through the engine renderer; `.git/` remains protected. External changes use M-prefixed requests stored in protected, git-ignored `.flamin-maintenance/`, without creating a product. A human lists requests with `flamin approve` and answers the exact request in a terminal with `flamin approve M-0001 --yes` (or `--no`); retry the same operation afterward. Approval is single-use and bound to the workspace and exact action. Recognized literal GitHub reads are allowed; ambiguous requests remain gated. Maintenance does not grant blanket approval for external changes. The pre-commit check still refuses kit changes that did not pass `flamin kit-maintenance test`; that command currently runs the full suite and has no scope option. `flamin init` is refused and `flamin doctor --kit` fails until the mode is off, so a shipped kit never carries the flag. Engine hook source changes apply on the next hook invocation; adapter configuration changes may require reloading the tool and renewing hook trust.
 
 ## Codex shell environment
 
@@ -140,3 +140,22 @@ do not edit `.codex/config.toml` directly.
 ## Future option (not built)
 
 A PreInvocation safety filter for prompts, with configurable policy files, is a future enterprise option (DESIGN §15.4). Today's policy patterns are built-in defaults.
+
+## Human-controlled maintenance commits
+
+Stage the intended files first. `flamin kit-maintenance test --scope test_commit_validation test_maintenance_approvals` runs only named unittest scopes against a temporary copy of the index. It records the exact staged fingerprint; unstaged contents are excluded. Failed validation clears earlier scoped evidence and authorization. The full suite is not run.
+
+Human terminal commands after staging:
+
+```powershell
+.\flamin.cmd kit-maintenance test --scope test_commit_validation test_maintenance_approvals
+.\flamin.cmd kit-maintenance authorize-commit --validation scoped --reason "Focused checks are sufficient" --yes
+.\flamin.cmd check-staged
+git commit -m "Support human-controlled maintenance validation"
+```
+
+To explicitly skip tests, omit the test command and use `flamin kit-maintenance authorize-commit --validation skipped --reason "Human accepts committing without tests" --yes` instead. Agents cannot authorize either choice.
+
+Authorization refreshes and stages only `kit/MANIFEST` from indexed blobs. It refuses to overwrite unstaged manifest edits and preserves other staged/unstaged files. It binds workspace, HEAD, paths, contents and modes; index/HEAD changes invalidate it. Protected `.flamin-maintenance/approvals.json` records the choice, reason, timestamp and human full-suite waiver. Scoped tests are never reported as a full-suite pass; skipped tests are never reported as a pass. Manifest, secret, lock and other applicable commit checks remain active. Release/publication approvals remain separate. Snapshots currently require resolved regular files; symlinks, submodules and conflicted indexes are rejected.
+
+The existing full-suite command remains available without --scope, only when the human chooses it. Hook policy distinguishes literal document text from executed human-only commands for supported Python heredoc document writes; unknown forms remain conservative.

@@ -324,6 +324,16 @@ def pre_tool(p: Product, c: Call) -> Decision:
         spans = find_secrets(c.command or "", include_passwords=False)
         if spans:
             return Decision("deny", f"Secret leak blocked: the call arguments contain a {spans[0][0]}.")
+        if "github" in c.tool_name.lower():
+            operation = c.tool_name.lower().rsplit("__", 1)[-1]
+            # Only known reads are exempt. Unknown GitHub connector operations require approval.
+            reads = {"get_release", "get_latest_release", "list_releases", "list_release_assets",
+                     "get_file_contents", "list_branches", "list_commits", "get_commit",
+                     "get_pull_request", "list_pull_requests", "get_issue", "list_issues",
+                     "search_repositories", "search_code", "search_issues", "search_pull_requests"}
+            if operation not in reads:
+                return gate(p, c, "external-api", c.tool_name + "\n" + (c.command or ""),
+                            f"GitHub connector action {c.tool_name}")
         return Decision("allow", "mcp call")
     if c.kind in ("write", "delete"):
         writes = [(c.path, c.new if c.kind == "write" else None, c.have_content, c.kind == "delete")]
@@ -346,6 +356,8 @@ def check_write(p: Product, c: Call, relpath: str | None, new: str | None, have_
         return Decision("allow", "outside the project")
     if pol.is_state_path(relpath):
         return Decision("deny", f"{relpath} is engine state. Only the flamin engine writes it; use a `flamin <verb>` command.")
+    if pol.maintenance_mode(p.root) and pol.is_kit_file(relpath) and c.agent in WORKERS:
+        return Decision("deny", "Kit infrastructure changes belong to the main assistant, not the seven product agents.")
     if pol.is_enforcement_path(relpath) and not (pol.maintenance_mode(p.root) and pol.is_kit_file(relpath)):
         return Decision("deny", f"{relpath} is part of the enforcement layer (kit, launchers, tool config, rules files, "
                         ".git, .flamin/stacks). Agents may not change it; only `flamin init`, `flamin upgrade` or an "
@@ -441,7 +453,7 @@ def check_shell(p: Product, c: Call) -> Decision:
     what = pol.human_only(cmd)
     if what:
         args = pol.normalize_flamin_args(cmd) or ""
-        if _can_ask(c):
+        if _can_ask(c) and not pol.maintenance_mode(p.root):
             ap.write_ask_token(p.root, args, c.tool)
             return Decision("ask", f"flamin: `{args}` is a human-only decision ({what}). Confirm only if you, the human, "
                             "agree with exactly this command.")
@@ -459,6 +471,8 @@ def check_shell(p: Product, c: Call) -> Decision:
         rp = rel(target, p.root)
         if not _inside(rp):
             continue
+        if pol.maintenance_mode(p.root) and pol.is_kit_file(rp) and c.agent in WORKERS:
+            return Decision("deny", "Kit infrastructure changes belong to the main assistant, not the seven product agents.")
         if pol.is_state_path(rp) or (pol.is_enforcement_path(rp)
                                      and not (pol.maintenance_mode(p.root) and pol.is_kit_file(rp))):
             return Decision("deny", f"Shell write to {rp} blocked: engine state and the enforcement layer are "
@@ -483,9 +497,18 @@ def _can_ask(c: Call) -> bool:
 # ---------------------------------------------------------------- gates
 
 def gate(p: Product, c: Call, kind: str, payload: str, title: str) -> Decision:
+    if pol.maintenance_mode(p.root):
+        from . import maintenance
+        approved, rid = maintenance.request(p.root, kind, payload, title, c.call_key)
+        if approved:
+            return Decision("allow", f"approved by human via terminal ({rid})", request=rid)
+        return Decision("deny", f"Maintenance approval needed ({rid}): {title}. "
+                        f"The human runs `flamin approve {rid} --yes` (or --no) in a terminal, "
+                        "then retries the exact action. No product initialization is required.", request=rid)
     if not p.store.exists():
         return Decision("deny", f"{title}: this is an Approval Gate item and there is no product state to record an "
-                        "approval. Run `flamin init` first.")
+                        "approval. For kit work, a human enables `flamin kit-maintenance on`; "
+                        "use `flamin init` only to start a product.")
     full_payload = f"{kind}\n{payload}"
     with p.tx() as (state, appr):
         if c.call_key:  # the same tool call arriving twice (D-44) keeps the answer it already got

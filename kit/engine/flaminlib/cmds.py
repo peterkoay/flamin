@@ -30,7 +30,7 @@ from .util import KIT_DIR, FlaminError, iso, read_text, sha256_bytes, sha256_tex
 
 STATE_FORMAT = json.loads((KIT_DIR / "engine" / "format.json").read_text(encoding="utf-8"))["state_format"]
 GITIGNORE = [".flamin/audit/", ".flamin/cache/", ".flamin/tmp/", ".flamin/.lock", ".flamin-backup-*/",
-             ".flamin-kit-maintenance", ".claude/settings.local.json", ".cursor/hooks.json", ".env", ".env.*",
+             ".flamin-kit-maintenance", ".flamin-maintenance/", ".claude/settings.local.json", ".cursor/hooks.json", ".env", ".env.*",
              "*.pem", "*.key", "secrets/"]
 DOC_TEMPLATES = {
     "business/overview.md": "# Product overview\n\nPurpose, users, what \"good\" looks like. Written by the Business agent.\n",
@@ -225,7 +225,7 @@ def cmd_status(p: Product, args) -> int:
     if not p.store.exists():
         if maintenance_mode(p.root):
             out("Master-kit maintenance mode is ON (D-46). The product flow does not apply; kit files are open to "
-                "agents. Kit changes must pass `flamin kit-maintenance test` before they can be committed. "
+                "the main assistant. Commits require full validation or human-authorized scoped/skipped validation. "
                 "A human ends it with `flamin kit-maintenance off`.")
             return 0
         out("No product here yet. This is a clean flamin kit.")
@@ -470,7 +470,7 @@ def cmd_check_staged(p: Product, args) -> int:
     paths = {c[1] for c in changes}
     # enforcement layer: kit manifest (Heuristic, D-30)
     kit_changed = [c for c in changes if mf.is_kit_path(c[1]) or c[1] == "kit/MANIFEST"]
-    if kit_changed and (root / MAINTENANCE_FLAG).exists():
+    if kit_changed and maintenance_mode(root) and not rng:
         problems += maintenance_test_check(root, new_of if "kit/MANIFEST" in paths else None)
     if kit_changed:
         mtext = new_of("kit/MANIFEST") if "kit/MANIFEST" in paths else (read_text(root / "kit" / "MANIFEST") if not rng else new_of("kit/MANIFEST"))
@@ -486,8 +486,9 @@ def cmd_check_staged(p: Product, args) -> int:
             if data is None:
                 continue
             if want.get(path) != mf.content_hash(data.encode("utf-8")):
-                problems.append(f"{path}: kit file changed and does not match kit/MANIFEST (enforcement layer). "
-                                "Only `flamin upgrade` changes kit files.")
+                problems.append(f"{path}: kit file changed and does not match kit/MANIFEST (enforcement layer). " +
+                                ("Human maintenance authorization refreshes the staged manifest: use `flamin kit-maintenance authorize-commit`."
+                                 if maintenance_mode(root) else "Only `flamin upgrade` changes kit files."))
     # state files: checksum sidecars
     state_text = new_of(".flamin/state.json") if ".flamin/state.json" in paths else read_text(root / ".flamin" / "state.json")
     for name in STATE_FILES:
@@ -972,6 +973,20 @@ def _flag(root: Path) -> dict:
 def cmd_kit_maintenance(p: Product, args) -> int:
     root = p.root
     flag = root / MAINTENANCE_FLAG
+    if getattr(args, "scope", None) and args.action != "test":
+        raise FlaminError("--scope is valid only for kit-maintenance test.")
+    if args.action != "authorize-commit" and (getattr(args, "validation", None) or getattr(args, "reason", None)):
+        raise FlaminError("--validation and --reason are valid only for authorize-commit; tests were not run.")
+    if args.action == "authorize-commit":
+        from . import commit_validation
+        commit_validation.authorize(root, args, p.agent)
+        return 0
+    if args.action == "test" and getattr(args, "scope", None):
+        if not maintenance_mode(root):
+            raise FlaminError("Scoped kit tests require human-enabled maintenance mode.")
+        from . import commit_validation
+        commit_validation.scoped_test(root, args.scope)
+        return 0
     if args.action == "status":
         out("Master-kit maintenance mode: " + ("ON" if maintenance_mode(root) else "off"))
         return 0
@@ -1011,16 +1026,24 @@ def cmd_kit_maintenance(p: Product, args) -> int:
     data["tested_at"] = iso()
     write_text(flag, json.dumps(data) + "\n")
     out("Engine tests passed. kit/MANIFEST refreshed and recorded as tested.")
+    from . import maintenance
+    with maintenance.transaction(root) as records:
+        records.pop("commit_authorization", None)
     return 0
 
 
 def maintenance_test_check(root: Path, new_of) -> list[str]:
     """In maintenance mode, staged kit changes must match the last tested manifest (D-46)."""
+    from . import commit_validation
+    decision = commit_validation.check(root)
+    if decision is not None:
+        return decision
     want = _flag(root).get("tested_manifest")
     manifest = new_of("kit/MANIFEST") if new_of else read_text(root / "kit" / "MANIFEST")
     if not want or sha256_text((manifest or "").replace("\r\n", "\n")) != want:
-        return ["Kit changes in maintenance mode must pass the engine tests first: run `flamin kit-maintenance test`, "
-                "then stage kit/MANIFEST (D-46)."]
+        return ["Kit changes require full validation (`flamin kit-maintenance test` and staged kit/MANIFEST) "
+                "or human authorization with `flamin kit-maintenance authorize-commit --validation scoped|skipped "
+                "--reason TEXT --yes` (D-46)."]
     return []
 
 

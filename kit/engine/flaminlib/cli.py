@@ -120,7 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--stdin", action="store_true", help="write the handoff from stdin (validated first)")
     add("rebuild-locks", "Rebuild locks.json from inline markers", cmds.cmd_rebuild_locks)
     sp = add("kit-maintenance", "Master-kit maintenance mode: on/off (human only), test, status", cmds.cmd_kit_maintenance)
-    sp.add_argument("action", choices=["on", "off", "test", "status"])
+    sp.add_argument("action", choices=["on", "off", "test", "status", "authorize-commit"])
+    sp.add_argument("--scope", nargs="+", help="Explicit unittest scopes run against staged contents only")
+    sp.add_argument("--validation", choices=["scoped", "skipped"])
+    sp.add_argument("--reason")
+    sp.add_argument("--yes", action="store_true")
     return ap
 
 
