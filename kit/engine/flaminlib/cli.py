@@ -11,6 +11,19 @@ from .product import Product
 from .util import FlaminError
 
 
+def cmd_check_syntax(p: Product, args) -> int:
+    """Read-only Python syntax validation; no imports of checked code or bytecode writes."""
+    import ast
+    files = sorted((p.root / "kit" / "engine").rglob("*.py"))
+    for path in files:
+        try:
+            ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        except (SyntaxError, UnicodeError, OSError) as exc:
+            raise FlaminError(f"Syntax check failed: {path}: {exc}") from exc
+    print(f"Syntax checked {len(files)} Python files; behavioral tests were not run.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="flamin", description="flamin engine: state, gates and checks for AI agent teams.")
     sub = ap.add_subparsers(dest="verb", metavar="<verb>")
@@ -24,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--tool", choices=["claude", "codex", "cursor", "all"], default=None)
     sp.add_argument("--new-product", action="store_true", help="refuse if a product already lives here")
     add("status", "Show product, version, phase, current step, open requests", cmds.cmd_status)
+    add("check-syntax", "Read-only syntax check of kit Python sources; does not run tests", cmd_check_syntax)
     sp = add("doctor", "Report blockers on this machine", cmds.cmd_doctor)
     sp.add_argument("--kit", action="store_true", help="also check the master kit is clean")
     sp.add_argument("--clear-stale-lock", action="store_true")

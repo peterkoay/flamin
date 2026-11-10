@@ -95,10 +95,20 @@ def codex_shared() -> dict[str, str]:
             f"model = {json.dumps(models[a['tier']])}",
             f"model_reasoning_effort = {json.dumps(effort[a['tier']])}",
             f"sandbox_mode = {json.dumps(sandbox)}",
-            f"developer_instructions = {_toml_multiline(_prompt(name) + codex_tool_guidance(a))}",
+            f"developer_instructions = {_toml_multiline(codex_prompt(name) + codex_tool_guidance(a))}",
         ]
         files[f".codex/agents/{name}.toml"] = "# Rendered by flamin init from kit/agents/. Do not edit.\n" + "\n".join(body) + "\n"
     return files
+
+
+def codex_prompt(name: str) -> str:
+    text = _prompt(name)
+    if name == "business":
+        text = text.replace("you have no shell permission and never execute those commands",
+                            "you may use recognized read-only terminal commands, but never execute those engine commands")
+        text = text.replace("Do not use shell reads to obtain them.",
+                            "Recognized read-only terminal commands are permitted on Codex.")
+    return text
 
 
 def codex_tool_guidance(agent: dict) -> str:
@@ -106,21 +116,20 @@ def codex_tool_guidance(agent: dict) -> str:
     guidance += ("Use only tools actually available on this host and permitted by your role. "
                  "Native read/search tools are not available on every Codex host; "
                  "if none is permitted and available, request current file contents from the Orchestrator.\n")
-    if 'write' in agent['tools'] or 'edit' in agent['tools']:
+    if agent.get("name") == "orchestrator":
+        guidance += ("Use native edits for your owned session documents and human-authorized master-kit "
+                     "maintenance only, subject to exact-operation approval. Product code and specs "
+                     "remain owned by their designated roles.\n")
+    elif 'write' in agent['tools'] or 'edit' in agent['tools']:
         guidance += ("Use native apply_patch for documents/files within your declared ownership. "
                      "Its availability does not authorize edits outside those paths or to engine state.\n")
     else:
         guidance += "Your role has no document editing permission; do not use apply_patch to write files.\n"
-    if 'shell' not in agent['tools']:
-        guidance += ("No shell: do not use exec_command, PowerShell, Bash or shell-based reads/searches. "
-                     "Return engine command requests to the Orchestrator. A shell denial does not remove "
-                     "your permitted native document editing rights or transfer ownership.\n")
-    else:
-        guidance += "Shell tools remain subject to your role permissions, path ownership and approval gates.\n"
+    guidance += read_text(KIT_DIR / "agents" / "codex-policy.md") or ""
     return guidance
 
 
-CODEX_TOOLS = "^(Bash|apply_patch|collaborationspawn_agent|mcp__.*)$"
+CODEX_TOOLS = "^(Bash|PowerShell|Shell|shell|unified_exec|exec_command|shell_command|Write|Edit|MultiEdit|NotebookEdit|Delete|apply_patch|collaborationspawn_agent|mcp__.*)$"
 
 
 def codex_hook_groups() -> list[tuple[str, str | None, str]]:
@@ -237,7 +246,7 @@ def planned(tool="all") -> dict[str, str]:
         files.update(claude_local())
     if "codex" in tools:
         files.update(codex_shared())
-        files["AGENTS.md"] = agents_md()
+        files["AGENTS.md"] = agents_md() + codex_tool_guidance(_agent("orchestrator"))
     if "cursor" in tools:
         files.update(cursor_shared())
         files.update(cursor_local())

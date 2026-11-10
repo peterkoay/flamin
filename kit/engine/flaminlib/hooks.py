@@ -6,6 +6,7 @@ No business rule lives in an adapter; they all live here and in the modules this
 from __future__ import annotations
 
 import json
+import difflib
 import os
 import re
 import sys
@@ -160,8 +161,9 @@ def normalize(tool: str, native: str, payload: dict, p: Product) -> Call:
     elif native == "afterFileEdit":
         c.kind = "afteredit"
         _set_path(c, p, payload.get("file_path"))
-    elif name in ("Bash", "PowerShell", "Shell", "shell", "unified_exec"):
-        c.kind, c.command = "shell", str(ti.get("command", ""))
+    elif name in ("Bash", "PowerShell", "Shell", "shell", "unified_exec") or (
+            tool == "codex" and name in ("exec_command", "shell_command")):
+        c.kind, c.command = "shell", str(ti.get("command", ti.get("cmd", "")))
     elif name in ("Agent", "Task", "collaborationspawn_agent", "spawn_agent"):
         c.kind = "spawn"
         c.spawn = str(ti.get("subagent_type") or ti.get("agent_type") or ti.get("subagentType") or "")
@@ -338,6 +340,8 @@ def pre_tool(p: Product, c: Call) -> Decision:
     if c.kind in ("write", "delete"):
         writes = [(c.path, c.new if c.kind == "write" else None, c.have_content, c.kind == "delete")]
         writes += [(pth, new, ok, new is None and ok) for pth, new, ok in c.extra_writes]
+        if c.tool == "codex":
+            return codex_write(p, c, writes)
         for pth, new, ok, is_delete in writes:
             d = check_write(p, c, pth, new, ok, is_delete)
             if d.decision != "allow":
@@ -349,7 +353,7 @@ def pre_tool(p: Product, c: Call) -> Decision:
 # ---------------------------------------------------------------- writes
 
 def check_write(p: Product, c: Call, relpath: str | None, new: str | None, have_content: bool,
-                is_delete: bool) -> Decision:
+                is_delete: bool, *, approval: bool = True) -> Decision:
     if not relpath:
         return Decision("allow", "no path")
     if not _inside(relpath):
@@ -399,6 +403,8 @@ def check_write(p: Product, c: Call, relpath: str | None, new: str | None, have_
     if not ok:
         return Decision("deny", "Phase order: " + why)
     # Approval Gates
+    if not approval:
+        return Decision("allow", "hard checks passed; whole-operation approval follows")
     if is_delete:
         return gate(p, c, "delete", f"delete {relpath}", f"delete file {relpath}")
     if pol.is_secret_file(relpath):
@@ -408,6 +414,43 @@ def check_write(p: Product, c: Call, relpath: str | None, new: str | None, have_
         return gate(p, c, "dependency", f"write {relpath} (sha256 {sha256_text(new)[:16]})",
                     f"change dependencies in {relpath}")
     return Decision("allow", "write checks passed")
+
+
+def codex_write(p: Product, c: Call, writes: list) -> Decision:
+    """Validate every target before one approval for the complete edit."""
+    changes, previews, seen = [], [], set()
+    for path, new, ok, deleting in writes:
+        if not path or not _inside(path) or not ok or (new is None and not deleting):
+            return Decision("deny", "Codex edits require known in-workspace targets and complete content; use apply_patch.")
+        target = p.root / path
+        if not target.resolve().is_relative_to(p.root.resolve()):
+            return Decision("deny", f"Edit target escapes the workspace: {path}.")
+        if any(part.is_symlink() for part in (target, *target.parents)):
+            return Decision("deny", f"Symlink edit target is not supported: {path}.")
+        resolved = str(target.resolve())
+        if resolved in seen:
+            return Decision("deny", "Duplicate edit targets are not supported; submit one final edit per file.")
+        seen.add(resolved)
+        old = read_text(target)
+        if lk.level_of(old):
+            permitted, reason = lk.check_lock(path, old, None if deleting else new, None)
+            if not permitted:
+                return Decision("deny", reason)
+        d = check_write(p, c, path, new, ok, deleting, approval=False)
+        if d.decision != "allow":
+            return d
+        changes.append({"path": path, "before_hash": sha256_text(old) if old is not None else None,
+                        "after": None if deleting else new})
+        previews.append("".join(difflib.unified_diff(
+            (old or "").splitlines(keepends=True), (new or "").splitlines(keepends=True),
+            fromfile=path if old is not None else "/dev/null",
+            tofile="/dev/null" if deleting else path)))
+    payload = json.dumps({"workspace": str(p.root.resolve()), "agent": c.agent,
+                          "changes": changes}, sort_keys=True, ensure_ascii=False)
+    d = gate(p, c, "codex-edit", payload, "apply complete Codex edit: " + ", ".join(x["path"] for x in changes))
+    if d.decision != "allow":
+        d.reason += "\nReview the entire operation before approval:\n" + redact("\n".join(previews))
+    return d
 
 
 def _inside(relpath: str) -> bool:
@@ -447,7 +490,7 @@ def _deps(relpath: str, text: str | None) -> frozenset:
 
 def check_shell(p: Product, c: Call) -> Decision:
     cmd = c.command or ""
-    if c.agent and c.agent_source == "hook" and c.agent in WORKERS and not pol.agent_has_shell(c.agent):
+    if c.tool != "codex" and c.agent and c.agent_source == "hook" and c.agent in WORKERS and not pol.agent_has_shell(c.agent):
         return Decision("deny", f"The {c.agent} agent has no shell tool (D-41). Every shell call from it is denied; "
                         "stop the shell operation and report its full reason to the Orchestrator. "
                         "Authorized native editing of your owned documents remains permitted. "
@@ -470,6 +513,28 @@ def check_shell(p: Product, c: Call) -> Decision:
         return Decision("deny", f"Secret leak blocked: the command line contains a {spans[0][0]}. Use an environment variable.")
     state = _state(p)
     locks = p.locks().get("files", {}) if state else {}
+    if c.tool == "codex":
+        if pol.codex_readonly_shell(cmd):
+            return Decision("allow", "recognized read-only command; available to every Codex role")
+        ti = c.raw.get("tool_input") or {}
+        if isinstance(ti, str):
+            try:
+                ti = json.loads(ti)
+            except ValueError:
+                ti = {}
+        cwd = Path(ti.get("workdir") or ti.get("cwd") or c.raw.get("cwd") or p.root)
+        if not cwd.is_absolute():
+            cwd = p.root / cwd
+        if (pol.codex_engine_shell(cmd) and cwd.resolve() == p.root.resolve()
+                and c.agent == "orchestrator" and c.agent_source == "hook"):
+            payload = json.dumps({"workspace": str(p.root.resolve()), "cwd": str(cwd.resolve()),
+                                  "command": cmd, "agent": c.agent}, sort_keys=True)
+            return gate(p, c, "codex-shell", payload, f"run exact engine command in {cwd.resolve()}: {cmd}")
+        return Decision("deny", "This command is not a recognized read-only invocation. State-changing commands "
+                        "require human approval, but arbitrary shell execution cannot be checked against file "
+                        "ownership, locks and workflow protections. This route remains blocked even with approval. "
+                        "Use a native edit with a complete diff, or ask the Orchestrator for a supported flamin command. "
+                        "Scripts, compound commands and redirection are not exempt.")
     for target in pol.shell_write_targets(cmd):
         rp = rel(target, p.root)
         if not _inside(rp):

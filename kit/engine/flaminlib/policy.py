@@ -43,6 +43,68 @@ def agent_has_shell(agent: str) -> bool:
     return "shell" in agent_defs().get(agent, {}).get("tools", [])
 
 
+def codex_shell_tokens(command: str) -> list[str]:
+    """Only literal, single invocations. This is not a general shell parser."""
+    # Metacharacters inside literal quotes are search text, not shell operators.
+    masked = re.sub(r"""'[^'\r\n]*'|"[^"\r\n]*" """.rstrip(), "literal", command)
+    if (not command.strip() or re.search(r"[\x00\r\n$\x60%]", command)
+            or re.search(r"""[;&|<>@{}()"']""", masked)):
+        return []
+    try:
+        words = shlex.split(command, posix=False)
+    except ValueError:
+        return []
+    return [w[1:-1] if len(w) > 1 and w[0] == w[-1] and w[0] in "\"'" else w for w in words]
+
+
+def codex_readonly_shell(command: str) -> bool:
+    """Conservative allowlist; unknown flags and executable scripts fail closed."""
+    words = codex_shell_tokens(command)
+    if not words:
+        return False
+    name, args = words[0].lower(), words[1:]
+    if name in ("pwd", "get-location"):
+        return not args
+    flags = {
+        "ls": {"-l", "-a", "-la", "-al", "-lh"},
+        "cat": {"-n"},
+        "get-content": {"-literalpath", "-path", "-raw", "-totalcount", "-tail", "-encoding"},
+        "get-childitem": {"-literalpath", "-path", "-force", "-name", "-file", "-directory", "-recurse"},
+        "rg": {"-n", "-i", "-l", "-F", "-S", "-A", "-B", "-C", "--files", "--hidden", "--no-ignore", "--glob", "-g",
+               "--count", "-c", "--fixed-strings", "--line-number", "--"},
+    }
+    if name in flags:
+        allowed = flags[name]
+        return all(not a.startswith("-") or
+                   (a.lower() if name.startswith("get-") else a) in allowed for a in args)
+    if name == "git":
+        if args == ["--no-optional-locks", "status", "--short"]:
+            return True
+        if args in (["branch", "--show-current"], ["rev-parse", "--show-toplevel"], ["rev-parse", "HEAD"]):
+            return True
+        # Explicitly disable external diff and textconv.
+        if args[:3] == ["diff", "--no-ext-diff", "--no-textconv"]:
+            return all(a in ("--stat", "--name-only", "--cached", "--staged", "--check", "--")
+                       or (not a.startswith("-") and re.fullmatch(r"[\w./\\:-]+", a))
+                       for a in args[3:])
+    if name in ("./flamin", ".\\flamin.cmd", "./flamin.cmd"):
+        return args in (["status"], ["resume"], ["kit-maintenance", "status"], ["check-syntax"])
+    return False
+
+
+def codex_engine_shell(command: str) -> bool:
+    """Checked engine routes only. check_shell rejects human-only commands first."""
+    words = codex_shell_tokens(command)
+    if len(words) < 2 or words[0] not in ("./flamin", ".\\flamin.cmd", "./flamin.cmd"):
+        return False
+    return words[1] in {
+        "intake", "analyze", "model", "baseline-review", "baseline-amend", "plan", "design",
+        "generate", "develop", "wire", "module-done", "integration-test", "architecture-review",
+        "release", "cr-new", "cr-approve", "handoff", "lint", "check-lock", "check-boundary",
+        "check-phase",
+    }
+
+
 def is_state_path(p: str) -> bool:
     return any_glob(p, STATE_PATHS)
 

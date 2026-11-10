@@ -50,11 +50,58 @@ class TestShellByAgentsWithoutShell(Project):  # D-41
         for agent in ("business", "analyst", "architect", "planner"):
             code, out, _ = self.hook("claude", bash("ls", agent=agent))
             self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny", agent)
-            out = self.hook("codex", bash("ls", agent=agent))[1]
-            self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny", agent)
         for agent in ("designer", "developer", "tester", None):
             code, out, _ = self.hook("claude", bash("ls", agent=agent))
             self.assertEqual((code, out), (0, ""), agent)
+
+
+class TestCodexActionApproval(Project):
+    def test_reads_for_every_role(self):
+        self.init("codex")
+        for agent in ("business", "analyst", "architect", "planner", "designer", "developer", "tester", None):
+            code, out, _ = self.hook("codex", bash("ls", agent=agent))
+            self.assertEqual((code, out), (0, ""), agent)
+
+    def test_unknown_shell_is_blocked(self):
+        self.init("codex")
+        for command in ("python script.py", "ls; touch x", "cat a > b",
+                        "rg --pre ./script foo", "git diff --output=x"):
+            out = self.hook("codex", bash(command))[1]
+            self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny", command)
+
+    def test_literal_read_classifier(self):
+        for command in ("Get-Content AGENTS.md", "rg -n D-41 kit", "git --no-optional-locks status --short",
+                        'rg -n -A 28 "one|two" kit', ".\\flamin.cmd check-syntax"):
+            self.assertTrue(pol.codex_readonly_shell(command), command)
+        for command in ("rg --pre=script foo", "git -c alias.x=!script x", "ls $(touch x)",
+                        "Get-Content a\nRemove-Item b", "python -c 'print(1)'", "rg @arguments",
+                        "rg foo | Set-Content out", "cat %DYNAMIC%"):
+            self.assertFalse(pol.codex_readonly_shell(command), command)
+
+    def test_maintenance_edit_is_one_exact_request(self):
+        self.flamin("kit-maintenance", "on")
+        from flaminlib.hooks import Call, pre_tool
+        from flaminlib.product import Product
+        from flaminlib import maintenance
+        p = Product(self.root, tool="codex")
+        call = Call(tool="codex", event="PreToolUse", kind="write", agent="orchestrator",
+                    path="kit/a.txt", new="one\n", extra_writes=[("kit/b.txt", "two\n", True)])
+        denied = pre_tool(p, call)
+        self.assertEqual(denied.decision, "deny")
+        self.assertEqual(len(maintenance.pending(self.root)), 1)
+        self.flamin("approve", denied.request, "--yes")
+        changed = Call(tool="codex", event="PreToolUse", kind="write", agent="orchestrator",
+                       path="kit/a.txt", new="changed\n", extra_writes=[("kit/b.txt", "two\n", True)])
+        self.assertEqual(pre_tool(p, changed).decision, "deny")
+        self.assertEqual(pre_tool(p, call).decision, "allow")
+        self.assertEqual(pre_tool(p, call).decision, "deny")
+
+    def test_guidance_does_not_change_other_hosts(self):
+        guidance = render.codex_shared()[".codex/agents/business.toml"]
+        self.assertIn("Every Codex role", guidance)
+        self.assertNotIn("you have no shell permission", guidance)
+        self.assertIn("you have no shell permission", render.claude_shared()[".claude/agents/business.md"])
+        self.assertIn("you have no shell permission", render.cursor_shared()[".cursor/agents/business.md"])
 
 
 class TestIdempotency(Project):  # D-44
