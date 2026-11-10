@@ -111,6 +111,16 @@ def codex_prompt(name: str) -> str:
     return text
 
 
+def codex_rehearsal() -> dict[str, str]:
+    """Render the limited Step 0 adapter without changing the legacy renderer."""
+    rules = (KIT_DIR / "rules" / "codex-rehearsal.md").read_text(encoding="utf-8")
+    business_path = ".codex/agents/business.toml"
+    header = codex_shared()[business_path].split("developer_instructions = ", 1)[0]
+    business_prompt = (KIT_DIR / "agents" / "business-rehearsal.md").read_text(encoding="utf-8")
+    return {"AGENTS.md": rules, business_path: header + "developer_instructions = "
+            + _toml_multiline(business_prompt) + "\n"}
+
+
 def codex_tool_guidance(agent: dict) -> str:
     guidance = "\n## Codex host tool protocol\n"
     guidance += ("Use only tools actually available on this host and permitted by your role. "

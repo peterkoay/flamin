@@ -44,25 +44,45 @@ INTAKE_ALIASES = {"product": "name", "product_name": "name", "users_and_actors":
                   "success_criteria": "success"}
 
 
+def intake_revision(state: dict) -> str:
+    if state.get("phase") != 0 or state.get("stack_approved"):
+        raise FlaminError("Intake answers can only be saved during Step 0 before stack approval.")
+    return sha256_text(_dump(state))
+
+
+def record_intake(p: Product, answers: list[tuple[str, str]], expected_revision: str | None = None):
+    changed = []
+    with p.tx() as (state, _):
+        if expected_revision is not None:
+            if p.store.checksum_problems():
+                raise FlaminError("Workspace integrity check failed. Repair state before recording intake.")
+            if intake_revision(state) != expected_revision:
+                raise FlaminError("Workspace state changed. Review the intake answers again before saving.")
+        for key, value in answers:
+            if state["intake"].get(key) != value:
+                state["intake"][key] = value
+                changed.append(key)
+            if key == "name":
+                state["product"] = value
+    if changed:
+        p.log("intake", target="state.intake", reason="recorded " + ", ".join(changed))
+        p.ledger("Step 0 intake", decisions="recorded " + ", ".join(changed))
+    return state, changed
+
+
 def cmd_intake(p: Product, args) -> int:
     if args.stack:
         return _intake_stack(p, args)
-    changed = []
     if args.set:
-        with p.tx() as (state, _):
-            for item in args.set:
-                if "=" not in item:
-                    raise FlaminError(f"--set needs key=value, got '{item}'")
-                key, value = item.split("=", 1)
-                key = INTAKE_ALIASES.get(key.strip().lower(), key.strip().lower())
-                if state["intake"].get(key) != value.strip():
-                    state["intake"][key] = value.strip()
-                    changed.append(key)
-                if key == "name":
-                    state["product"] = value.strip()
+        answers = []
+        for item in args.set:
+            if "=" not in item:
+                raise FlaminError(f"--set needs key=value, got '{item}'")
+            key, value = item.split("=", 1)
+            key = INTAKE_ALIASES.get(key.strip().lower(), key.strip().lower())
+            answers.append((key, value.strip()))
+        _, changed = record_intake(p, answers)
         if changed:
-            p.log("intake", target="state.intake", reason="recorded " + ", ".join(changed))
-            p.ledger("Step 0 intake", decisions="recorded " + ", ".join(changed))
             out("Recorded: " + ", ".join(changed))
         else:
             out("No change needed: intake answers already recorded.")
