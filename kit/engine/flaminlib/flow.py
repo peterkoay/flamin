@@ -909,6 +909,8 @@ def _apply_cr_list(p: Product, state, req) -> str:
 
 # ====================================================================== approve
 
+HOST_APPROVER = "human via MCP confirmation form"
+
 def _maybe_answer_inline(p: Product, req, args) -> bool:
     """For commands that carry --yes/--no themselves (human-only through the hook)."""
     if getattr(args, "yes", False) or getattr(args, "no", False):
@@ -986,17 +988,20 @@ def decide(p: Product, rid: str, yes: bool | None, argv_key: str) -> None:
             raise FlaminError(f"{rid} needs a human answer: run `flamin approve {rid} --yes` (or --no) in a terminal.")
     if yes is None:
         yes = True  # the human confirmed the tool's own prompt for this exact command
+    out(apply_decision(p, rid, yes, approver))
+
+
+def apply_decision(p: Product, rid: str, yes: bool, approver: str, assumption_hash: str | None = None) -> str:
+    """Apply a decision after the caller has obtained human confirmation."""
     if rid.startswith("A-"):
-        _decide_assumption(p, rid, yes, approver)
-        return
+        return _decide_assumption(p, rid, yes, approver, assumption_hash)
     result = ""
     with p.tx() as (state, appr):
         req = appr["requests"].get(rid)
         if req is None:
             raise FlaminError(f"Unknown request {rid}.")
         if req["status"] not in ("pending", "asked"):
-            out(f"No change needed: {rid} is already {req['status']}.")
-            return
+            return f"No change needed: {rid} is already {req['status']}."
         if yes:
             kind = req["kind"]
             if kind == "stack":
@@ -1031,21 +1036,26 @@ def decide(p: Product, rid: str, yes: bool | None, argv_key: str) -> None:
         ap.sync_open_list(state, appr)
     p.log("gate-answer", target=rid, decision="allow" if yes else "deny",
           reason=f"{req['kind']}: {req['title']} -> {result}", approver=approver)
-    out(f"{rid} {'approved' if yes else 'rejected'} by {approver}: {result}.")
+    return f"{rid} {'approved' if yes else 'rejected'} by {approver}: {result}."
 
 
-def _decide_assumption(p: Product, aid: str, yes: bool, approver: str) -> None:
+def _decide_assumption(p: Product, aid: str, yes: bool, approver: str,
+                       assumption_hash: str | None = None) -> str:
     with p.tx() as (state, appr):
         ap.sync_assumptions(p.root, appr)
         rec = appr["assumptions"].get(aid)
         if rec is None:
             raise FlaminError(f"Unknown assumption {aid}. It must be written in .flamin/decisions/assumptions.md first.")
         new = "agreed" if yes else "rejected"
-        if rec["status"] == new:
-            out(f"No change needed: {aid} is already {new}.")
-            return
+        if assumption_hash is not None:
+            item = ap.parse_assumptions(p.root).get(aid)
+            if item is None or sha256_text(item["text"]) != assumption_hash:
+                raise FlaminError("The assumption changed. Review it again.")
+            rec.update(text_hash=assumption_hash, title=item["title"], scope=item["scope"])
+        elif rec["status"] == new:
+            return f"No change needed: {aid} is already {new}."
         rec.update({"status": new, "answered": iso(), "approver": approver})
     p.log("assumption", target=aid, decision="allow" if yes else "deny", reason=f"{new}: {rec.get('title')}",
           approver=approver)
     p.ledger("Assumption answered", decisions=f"{aid} {new} by {approver}")
-    out(f"{aid} {new} by {approver}.")
+    return f"{aid} {new} by {approver}."

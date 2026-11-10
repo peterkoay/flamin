@@ -1,9 +1,12 @@
 """Confirm and reopen Step 0 intake in a disposable workspace."""
 
+import shutil
+
 from helpers import Project
 
 from flamin_intake_mcp import IntakeSession
-from flaminlib import phase
+from flaminlib import approvals, phase
+from flaminlib.profiles import kit_profile
 from flaminlib.product import Product
 
 
@@ -82,6 +85,44 @@ class IntakeMcpTests(Project):
         self.write(".flamin/decisions/assumptions.md", "## A-001: Demo scope\n- Answer: Web and mobile\n")
         revised = self.send("tools/call", request)["result"]["structuredContent"]
         self.assertNotEqual(original["payload_hash"], revised["payload_hash"])
-        self.assertIn("protected human decision", revised["approval_blocker"])
+        self.assertTrue(revised["confirmation_available"])
         self.assertIn("error", self.send("tools/call", {"name": "flamin_approve", "arguments": {"id": "A-001"}}))
         self.assertFalse(self.product.store.path("approvals").exists())
+
+    def confirm_decision(self, rid, decision="approve"):
+        return self.send("tools/call", {"name": "flamin_confirm_decision",
+                                        "arguments": {"id": rid, "decision": decision}})
+
+    def test_assumption_requires_a_current_single_use_confirmation(self):
+        path = ".flamin/decisions/assumptions.md"
+        self.write(path, "## A-001: Demo scope\n- Answer: Web only\n")
+        prompt = self.confirm_decision("A-001")
+        self.assertIn("Web only", prompt["params"]["message"])
+        self.assertTrue(self.decide(prompt, action="cancel")["result"]["isError"])
+        stale = self.confirm_decision("A-001")
+        self.write(path, "## A-001: Demo scope\n- Answer: Web and mobile\n")
+        self.assertTrue(self.decide(stale, confirmation="Approve A-001")["result"]["isError"])
+        self.assertFalse(self.product.store.path("approvals").exists())
+        current = self.confirm_decision("A-001")
+        self.assertIn("structuredContent", self.decide(current, confirmation="Approve A-001")["result"])
+        self.assertIsNone(self.decide(current, confirmation="Approve A-001"))
+        self.assertEqual(approvals.load(self.product.store)["assumptions"]["A-001"]["status"], "agreed")
+
+    def test_confirmed_stack_approval_advances_workflow(self):
+        profile = kit_profile("minimal")
+        shutil.copytree(profile.folder, self.root / "kit" / "stacks" / profile.name)
+        answers = {key: "Demo " + key for key in phase.MANDATORY_KEYS}
+        self.decide(self.propose(**answers))
+        self.write(".flamin/decisions/stack.md", "Use the shipped minimal profile.")
+        status = self.send("tools/call", {"name": "flamin_continue"})["result"]["structuredContent"]
+        proposed = self.send("tools/call", {"name": "flamin_propose_stack", "arguments": {
+            "profile": profile.name, "expected_revision": status["intake_revision"],
+        }})["result"]["structuredContent"]
+        rid = proposed["id"]
+        prompt = self.confirm_decision(rid)
+        self.assertIn("Use the shipped minimal profile.", prompt["params"]["message"])
+        self.assertFalse(self.product.state()["stack_approved"])
+        self.assertIn("structuredContent", self.decide(prompt, confirmation=f"Approve {rid}")["result"])
+        status = self.send("tools/call", {"name": "flamin_continue"})["result"]["structuredContent"]
+        self.assertEqual(status["step"], "Step 1 ready")
+        self.assertEqual(status["recorded_human_decisions"], [{"id": rid, "kind": "stack", "outcome": "approved"}])

@@ -1,9 +1,10 @@
-"""Opt-in MCP server for Step 0 intake with a host-mediated confirmation form."""
+"""Workspace MCP server for human-confirmed intake and Step 0 decisions."""
 
 from __future__ import annotations
 
 import json
 import sys
+from functools import partial
 from pathlib import Path
 from uuid import uuid4
 
@@ -34,7 +35,17 @@ INTAKE_TOOL = {
     },
     "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
 }
-CONFIRMATION = {"confirmation": "Save intake"}
+DECISION_TOOL = {
+    "name": "flamin_confirm_decision",
+    "description": "Ask the human to confirm an assumption or stack decision in the host form.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}, "decision": {"enum": ["approve", "reject"]}},
+        "required": ["id", "decision"],
+        "additionalProperties": False,
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
+}
 STACK_TOOL = {
     "name": "flamin_propose_stack",
     "description": "Open a formal Step 0 proposal for a shipped stack profile. Does not decide or apply the stack.",
@@ -57,7 +68,7 @@ def propose_stack(product: Product, args: object) -> dict:
     if (product.fdir / "decisions" / "proposed-stacks" / profile / "profile.json").exists():
         raise FlaminError("A local proposal shadows this shipped profile.")
     request, _ = flow.propose_stack(product, [profile], args["expected_revision"])
-    return review_decision(product, request["id"], protected=True)
+    return review_decision(product, request["id"])
 
 
 def prepare_intake(product: Product, args: object):
@@ -80,14 +91,55 @@ def prepare_intake(product: Product, args: object):
     )
 
 
+def complete_intake(product, answers, revision):
+    state, changed = flow.record_intake(product, answers, expected_revision=revision)
+    return {
+        "saved_fields": {key: state["intake"][key] for key in INTAKE_FIELDS if state["intake"].get(key)},
+        "changed_fields": changed,
+        "missing_fields": phase.missing_intake(state),
+    }
+
+
+def prepare_decision(product, args):
+    if (not isinstance(args, dict) or set(args) != {"id", "decision"}
+            or not isinstance(args["id"], str) or args["decision"] not in ("approve", "reject")):
+        raise FlaminError("Supply a decision ID and choose approve or reject.")
+    proposal = review_decision(product, args["id"])
+    if not proposal["confirmation_available"]:
+        raise FlaminError("This proposal type does not use the confirmation form yet.")
+    choice = args["decision"]
+    phrase = f"{choice.capitalize()} {proposal['id']}"
+    effect = ""
+    if proposal["kind"] == "stack" and choice == "approve":
+        effect = "\n\nApproval records the chosen stack, installs its profile and makes Step 1 ready."
+    message = (
+        f"{phrase}: {proposal['title']}\nWorkspace: {proposal['workspace']}\n\n{proposal['payload']}"
+        f"{effect}\n\nTo confirm, type {phrase} and accept. Otherwise decline or cancel."
+    )
+    return phrase, message, partial(complete_decision, product, proposal, choice)
+
+
+def complete_decision(product, proposal, choice):
+    rid = proposal["id"]
+    with product.store.transaction():
+        if review_decision(product, rid) != proposal:
+            raise FlaminError("The proposal changed. Review it again.")
+        result = flow.apply_decision(product, rid, choice == "approve", flow.HOST_APPROVER,
+                                     assumption_hash=proposal["payload_hash"])
+    return {"id": rid, "decision": choice, "result": result}
+
+
+def success(value):
+    return {"structuredContent": value, "content": [{"type": "text", "text": json.dumps(value)}]}
+
+
 def reply(request_id, result: dict) -> dict:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
 class IntakeSession:
-    def __init__(self, product: Product, decision_database: Path | None = None):
+    def __init__(self, product: Product):
         self.product = product
-        self.decision_database = decision_database
         self.supports_form = False
         self.pending = None
 
@@ -110,31 +162,29 @@ class IntakeSession:
                 not elicitation or isinstance(elicitation.get("form"), dict)
             )
         if method == "tools/list":
-            stack_tools = [STACK_TOOL] if self.decision_database is not None else []
-            return reply(request_id, {"tools": [*READ_TOOLS, INTAKE_TOOL, *stack_tools]})
-        if method == "tools/call" and params.get("name") == STACK_TOOL["name"] and self.decision_database is not None:
-            try:
-                proposal = propose_stack(self.product, params.get("arguments"))
-            except FlaminError as exc:
-                return reply(request_id, tool_error(str(exc)))
-            except (OSError, ValueError, TypeError, KeyError):
-                return reply(request_id, tool_error("The stack proposal could not be prepared."))
-            return reply(request_id, {"structuredContent": proposal,
-                                      "content": [{"type": "text", "text": json.dumps(proposal)}]})
-        if method != "tools/call" or params.get("name") != INTAKE_TOOL["name"]:
-            return dispatch(self.product, request, self.decision_database)
-        if not self.supports_form:
-            return reply(request_id, tool_error("This host does not provide intake confirmation forms."))
-        if self.pending is not None:
-            return reply(request_id, tool_error("Finish the outstanding intake confirmation first."))
+            return reply(request_id, {"tools": [*READ_TOOLS, INTAKE_TOOL, STACK_TOOL, DECISION_TOOL]})
+        name = params.get("name")
+        if method != "tools/call" or name not in (INTAKE_TOOL["name"], STACK_TOOL["name"], DECISION_TOOL["name"]):
+            return dispatch(self.product, request)
         try:
-            answers, revision, preview = prepare_intake(self.product, params.get("arguments"))
+            args = params.get("arguments")
+            if name == STACK_TOOL["name"]:
+                return reply(request_id, success(propose_stack(self.product, args)))
+            if not self.supports_form:
+                raise FlaminError("This host does not provide confirmation forms.")
+            if self.pending is not None:
+                raise FlaminError("Finish the outstanding confirmation first.")
+            if name == DECISION_TOOL["name"]:
+                phrase, preview, apply = prepare_decision(self.product, args)
+            else:
+                answers, revision, preview = prepare_intake(self.product, args)
+                phrase, apply = "Save intake", partial(complete_intake, self.product, answers, revision)
         except FlaminError as exc:
             return reply(request_id, tool_error(str(exc)))
         except (OSError, ValueError, TypeError, KeyError):
             return reply(request_id, tool_error("Workspace state could not be read."))
         confirmation_id = str(uuid4())
-        self.pending = (confirmation_id, request_id, answers, revision)
+        self.pending = (confirmation_id, request_id, phrase, apply)
         return {
             "jsonrpc": "2.0",
             "id": confirmation_id,
@@ -143,7 +193,7 @@ class IntakeSession:
                 "message": preview,
                 "requestedSchema": {
                     "type": "object",
-                    "properties": {"confirmation": {"type": "string", "title": "Type Save intake"}},
+                    "properties": {"confirmation": {"type": "string", "title": f"Type {phrase}"}},
                     "required": ["confirmation"],
                 },
             },
@@ -152,38 +202,25 @@ class IntakeSession:
     def complete(self, response: dict) -> dict | None:
         if self.pending is None or response["id"] != self.pending[0]:
             return None
-        _, request_id, answers, revision = self.pending
+        _, request_id, phrase, apply = self.pending
         self.pending = None
         result = response.get("result")
         if ("error" in response or not isinstance(result, dict) or result.get("action") != "accept"
-                or result.get("content") != CONFIRMATION):
-            return reply(request_id, tool_error("Intake was not confirmed. No answers were saved."))
+                or result.get("content") != {"confirmation": phrase}):
+            return reply(request_id, tool_error("The operation was not confirmed."))
         try:
-            state, changed = flow.record_intake(self.product, answers, expected_revision=revision)
+            return reply(request_id, success(apply()))
         except FlaminError as exc:
             return reply(request_id, tool_error(str(exc)))
         except (OSError, ValueError, TypeError, KeyError):
-            return reply(request_id, tool_error("Could not complete intake. Check workspace status before retrying."))
-        saved = {
-            "saved_fields": {key: state["intake"][key] for key in INTAKE_FIELDS if state["intake"].get(key)},
-            "changed_fields": changed,
-            "missing_fields": phase.missing_intake(state),
-        }
-        return reply(request_id, {"structuredContent": saved, "content": [{"type": "text", "text": json.dumps(saved)}]})
+            return reply(request_id, tool_error("Could not complete the operation. Check workspace status before retrying."))
 
 
 def main() -> int:
-    if len(sys.argv) not in (2, 3) or not Path(sys.argv[1]).is_absolute() or not Path(sys.argv[1]).is_dir():
-        print("Supply an absolute workspace path and optionally a protected decision database.", file=sys.stderr)
+    if len(sys.argv) != 2 or not Path(sys.argv[1]).is_absolute() or not Path(sys.argv[1]).is_dir():
+        print("Supply the absolute workspace path.", file=sys.stderr)
         return 2
-    root = Path(sys.argv[1]).resolve()
-    database = Path(sys.argv[2]) if len(sys.argv) == 3 else None
-    if database is not None:
-        if not database.is_absolute() or database.resolve().is_relative_to(root):
-            print("The decision database must be an absolute path outside the paired workspace.", file=sys.stderr)
-            return 2
-        database = database.resolve()
-    session = IntakeSession(Product(root, tool="mcp"), database)
+    session = IntakeSession(Product(Path(sys.argv[1]).resolve(), tool="mcp"))
     for line in sys.stdin.buffer:
         try:
             request = json.loads(line.decode("utf-8"))

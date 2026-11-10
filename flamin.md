@@ -4,17 +4,15 @@ Operator workflow and implementation contract. The development checkout implemen
 
 ## Codex Step 0 rehearsal
 
-The workspace-bound MCP server exposes status, continuation, review of formal proposals, and confirmed intake saving. Intake confirmation records answers only. With a paired decision database, the server can open a Step 0 proposal for a shipped stack and show the independently recorded outcomes.
+The workspace-bound MCP server exposes status, continuation, review of formal proposals, and confirmed intake saving. The server can open a Step 0 proposal for a shipped stack and show the recorded outcomes.
 
 The copy-only migrator recognizes the installed v2 Codex layout before stack approval. Its preview binds the rehearsal to a source fingerprint. It publishes a separate copy only after checking the captured files, removing identified Codex hooks and validating state checksums. It preserves request payloads and marks obsolete Codex shell and edit requests superseded in the copy. It preserves Git metadata and the Git backstop. Customized rules, unknown hook wiring and outstanding formal requests require review before applying this rehearsal.
 
 Maintainers can preview or create the copy with `kit/engine/flamin_rehearse.py`. The source path is required. Creating a copy also requires `--copy-to` and the preview's `--expected-snapshot`. Pair the MCP server `kit/engine/flamin_intake_mcp.py` to the absolute path of the copy.
 
-### Decision screen prototype
+### Human confirmation
 
-The standalone `kit/engine/flamin_decision_screen.py` runs on loopback. It takes a protected JSON pairing file with an absolute `workspace`, fixed `port`, base64url `credential_id`, and base64url `public_key_spki` for a pre-enrolled ES256 WebAuthn credential for `localhost`. The trusted installer supplies the public credential through a separate enrollment ceremony and provides the Python `cryptography` dependency. The operator opens the local screen, reviews the full proposal and chooses approve or reject. Each choice requires a fresh assertion with user presence and verification.
-
-Install the engine, pairing file and adjacent SQLite database under an OS identity or ACL the agent cannot modify. Give the MCP process read access to the database and configure its path as the second argument after the workspace. The decision screen binds each challenge to the exact proposal, state revision and choice. Results are recorded separately from the legacy workspace approval ledger. Applying a recorded decision to the product workflow, graphical enrollment, and live Codex pairing are outstanding. Keep the legacy backstop in place during the rehearsal.
+Use `flamin_confirm_decision` for an assumption or shipped stack proposal. The host shows the proposal and the human confirms the choice. FLAMIN checks the reviewed scope again and applies the outcome through the existing workspace engine. A confirmed stack approval makes Step 1 ready.
 
 ### Snapshot verification
 
@@ -29,20 +27,20 @@ Open the workspace in a supported host. A graphical setup screen pairs it with F
 | “Start a new project.” | Previews setup for the paired folder. After confirmation, initializes a clean workspace and starts Business intake. If a product already exists, shows its name and asks you to choose a different folder for the new product. |
 | “Continue.” | Shows the saved step, eligible role, missing inputs, and outstanding decisions. Resumes from the next eligible action. |
 | “Here are the missing intake answers.” | Gives the exact answers to Business to record in its owned Markdown. Checks which required fields remain. Opens formal proposals separately when the workflow requires them. |
-| “Show me what needs my approval.” | Shows pending proposals and opens the FLAMIN decision screen. The screen displays the action, target, exact revision, and effects before you decide. |
+| “Show me what needs my approval.” | Shows pending proposals and opens the host confirmation form. The form displays the action, target, exact revision, and effects before you decide. |
 | “Check this work.” | Reports results for the requested worktree, staged snapshot, or commit. Shows the checked revision and points to the rule and file for each failure. |
 | “Prepare this kit change for commit.” | Previews the staged files, manifest, and validation options. A controlled commit action uses the reviewed snapshot and the recorded validation choice. |
 | “Prepare the release.” | Validates a candidate and opens a release proposal. Publication has its own scoped confirmation. |
 
-The Orchestrator previews consequential work using **Understood**, **Planned**, and **Because**. It names the responsible role and operation in plain language. If a tool, approval screen, or role capability is missing, it reports the specific blocker and continues any independent work. An owner who cannot save an artifact returns a proposed diff and leaves the step open.
+The Orchestrator previews consequential work using **Understood**, **Planned**, and **Because**. It names the responsible role and operation in plain language. If a tool, confirmation form, or role capability is missing, it reports the specific blocker and continues any independent work. An owner who cannot save an artifact returns a proposed diff and leaves the step open.
 
 ## How the kit runs
 
-FLAMIN ships a separately installed local service and a graphical control screen. The host connects to the service through workspace-scoped, typed tools. The service resolves the paired workspace by ID, validates the caller's capability and relative paths, and runs the engine there. Each operation declares its input, result, and whether it mutates state. The service exposes neither arbitrary commands nor a generic wrapper around the old parser.
+The host starts the workspace-bound FLAMIN MCP server and invokes typed operations. The server validates inputs and runs the engine in the paired workspace. Each operation declares its input, result, and whether it mutates state. The service exposes neither arbitrary commands nor a generic wrapper around the old parser.
 
 `flamin.md` is the operator guide. Shared agent instructions come from `kit/rules/core.md`, with role instructions from `kit/agents/`. The renderer emits each host's Markdown instructions and assigns the eligible role its step, owned paths, artifact, and completion evidence. Agents use native editing tools for ordinary in-scope changes. Host permissions still govern file, process, and connector access.
 
-The engine remains authoritative for state, phase order, leases, generation, and gate outcomes. The paired service must protect its state and authorization ledger from agent writes. If workspace state stays under `.flamin/`, agent access to the authoritative files must be read-only or the workspace files must be projections backed by protected state. Markdown alone cannot provide that separation. Existing product artifacts and decision history stay readable.
+The engine keeps state, phase order, leases, generation, and gate outcomes in the workspace. The host mediates human confirmation and the engine records the decision in the existing ledger.
 
 | Operation family | Engine behavior | CLI coverage |
 | --- | --- | --- |
@@ -51,7 +49,7 @@ The engine remains authoritative for state, phase order, leases, generation, and
 | Submit workflow artifacts | Check role, active step, expected state revision, and artifact digest. Record the transition or return a typed proposal for the human. | `intake`, `analyze`, `model`, `baseline-review`, `baseline-amend`, `plan`, `design`, `cr-new`, `cr-approve`, `release` |
 | Generate and deliver | Bind generation to approved inputs. Issue revision-bound module leases, validate wiring and tests, and accept delivery against the checked snapshot. | `generate`, `develop`, `wire`, `module-done`, `integration-test`, `architecture-review` |
 | Verify and hand off | Check a named snapshot and return actionable findings. Validate Markdown handoffs when submitted and record explicit session close-out. | `lint`, `check-syntax`, `check-lock`, `check-boundary`, `check-phase`, `check-staged`, `handoff` |
-| Manage decisions and maintenance | Agents can propose and read outcomes. The human controls formal decisions and maintenance mode through the separate control screen. | `approve`, `kit-maintenance` |
+| Manage decisions and maintenance | Agents can propose and read outcomes. The human controls formal decisions and maintenance mode through host confirmation. | `approve`, `kit-maintenance` |
 
 Mutations carry an expected state revision and request ID. The engine serializes conflicting writes per workspace and module. The same request ID and payload return the recorded outcome after retry. Reusing an ID with a different payload fails. Work submitted against an expired, released, or superseded lease fails before state advances. Multi-file generation and migration journal their changes so a restart can finish or recover the operation without a second transition.
 
@@ -59,9 +57,7 @@ Mutations carry an expected state revision and request ID. The engine serializes
 
 Intake answers are recorded in chat. Ordinary operational consent, such as authorizing a specified deletion or external connector action, can also be given in chat after the Orchestrator shows the exact scope. A material scope change requires renewed consent. Host or connector permission checks still apply.
 
-Formal engine decisions use a separate local approval screen. Pairing enrolls the workspace owner through the graphical setup. The screen requires a user-verifying OS prompt for each approval or rejection. The trusted service creates and verifies a challenge for that decision and keeps its signing material and ledger outside agent-controlled files. Agent-facing tools have proposal and read capabilities only. A chat message, copied token, caller-supplied environment variable, or legacy `--yes` cannot create a new formal decision.
-
-Each proposal binds a unique ID and expiry to the workspace, action, normalized target and payload, applicable state revision, and relevant artifact digests or Git snapshot. The screen resolves and displays those details from the service. The service checks current scope when deciding and again when applying. It consumes approval once, records who decided and the outcome, and rejects stale, expired, mismatched, or replayed decisions. A retry can retrieve an existing outcome. If the approval screen is unavailable, gated actions remain pending.
+Formal engine decisions use the host confirmation form. FLAMIN displays the action and its scope, then checks the proposal and revision again before applying the human's response. A declined or cancelled form leaves the decision open. A human who confirms a rejection records a rejection.
 
 For a maintenance commit, the approved scope includes current HEAD, the exact staged tree including file modes and the generated manifest, and the validation choice and reason. The UI shows **full suite passed**, **targeted checks passed** with the named checks and results, or **validation skipped** with the human's reason. The service rechecks the approved tree and atomically updates the intended ref against the expected HEAD. A changed tree or HEAD requires a new proposal. A raw Git commit may still be possible where the host permits it. Protected merge and publication require verification of the submitted commit and, where applicable, valid maintenance evidence bound to that commit.
 
@@ -77,7 +73,7 @@ After the replacements pass acceptance, remove the FLAMIN tool and Git hooks, he
 
 ## Rollout and exit checks
 
-1. **Prove the new route in Codex first.** Use a clean test workspace. Complete graphical pairing, discover typed tools, submit work, approve through the independent screen, restart, and continue without a terminal. Demonstrate that an agent cannot approve through the tool interface, direct process invocation, state-file edits, or a replay. Prove each additional host before offering it as supported.
+1. **Prove the new route in Codex first.** Use a clean test workspace. Complete graphical pairing, discover typed tools, submit work, approve through the host confirmation form, restart, and continue without a terminal. Verify that the form is required and that cancellation, changed proposals and replay leave decisions unapplied. Prove each additional host before offering it as supported.
 2. **Prove verification and maintenance.** Accept a valid extension edit and trusted regeneration. Reject out-of-phase work, stale leases, illegal imports, and lock-record tampering. Check that a working-tree edit leaves the result for the same staged or committed snapshot unchanged. Demonstrate full, targeted, and skipped maintenance validation, then show that a changed HEAD or staged tree invalidates the approval. Show that a candidate cannot weaken the required CI check that judges it.
 3. **Preview and migrate a copy.** Detect installed layout, state schema, active and archived adapters, Git hook paths, CLI callers, and pending requests. Use the installed target version's migrator. Show the exact files and registrations affected before approval. Back up affected files and preserve unrelated settings, user hooks, and custom Git hook paths. Remove only identified FLAMIN registrations, including restorable copies. Flag ambiguous mixed hooks for human review. Preserve formal history, reissue unresolved decisions that need the new provenance, and mark hook-only requests superseded. Verify interruption recovery and idempotence before changing the original workspace.
 4. **Pilot TestPeteDemo.** Confirm its actual starting state. Open the migrated copy and say “continue.” Business can read and edit its owned intake Markdown. The Orchestrator checks missing fields and surfaces formal assumption proposals separately. Restart and confirm progress persists.
@@ -85,7 +81,7 @@ After the replacements pass acceptance, remove the FLAMIN tool and Git hooks, he
 
 ## Proposed defaults and implementation gates
 
-- Codex is the first host to prove. Claude Code and Cursor follow after equivalent tests. The approval screen belongs to FLAMIN so the formal decision path is independent of the chat host. Host registration and protected service execution need a working prototype before hook removal.
+- Codex is the first host to prove. Claude Code and Cursor follow after equivalent tests. Verify host registration and the human confirmation form before hook removal.
 - Use both a controlled local maintenance commit and a protected CI check for merge and publication. The local action covers offline kit work. CI covers enforcement where direct Git operations are possible.
 - Target the installed v2 layout first and require positive format detection even when the version label matches. Preview older and unknown layouts read-only until fixtures prove a migration path. Keep the migration bridge through the pilot and supported-layout tests, then remove it once supported installs can migrate with the graphical installer.
 - Choose the implementation baseline after the branch and pending changes can be inspected. Hook and launcher deletion is a separate rollout action once replacement evidence exists.

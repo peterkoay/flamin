@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
 sys.dont_write_bytecode = True
 
 from flaminlib import approvals, cmds, flow, phase  # noqa: E402
-from flaminlib.decision_desk import recorded_outcome  # noqa: E402
 from flaminlib.product import Product, kit_version  # noqa: E402
 from flaminlib.profiles import kit_profile, kit_profiles  # noqa: E402
 from flaminlib.util import FlaminError, read_text, sha256_text  # noqa: E402
@@ -38,7 +36,7 @@ REVIEW_TOOL = {
     "annotations": {"readOnlyHint": True, "openWorldHint": False},
 }
 READ_TOOLS = [STATUS_TOOL, CONTINUE_TOOL, REVIEW_TOOL]
-AUTHORITY_UNAVAILABLE = "A protected human decision service has not been paired. Formal decisions remain open."
+FORM_KINDS = {"assumption", "stack"}
 
 
 def _read_state(product: Product) -> tuple[dict, dict]:
@@ -85,7 +83,7 @@ def _workspace_status(state: dict, ledger: dict) -> dict:
     }
 
 
-def continue_workspace(product: Product, decision_database: Path | None = None) -> dict:
+def continue_workspace(product: Product) -> dict:
     if not product.store.exists():
         return {**workspace_status(product), "next_action": "Pair and initialize a workspace using the setup service."}
     state, ledger = _read_state(product)
@@ -95,60 +93,42 @@ def continue_workspace(product: Product, decision_database: Path | None = None) 
         for req in ledger["requests"].values()
         if req["status"] in ("pending", "asked") and req["kind"] != "action"
     ]
-    decided = []
-    if decision_database is not None:
-        pending = []
-        for item in formal:
-            if item["kind"] == "stack":
-                try:
-                    proposal = review_decision(product, item["id"], protected=True)
-                except FlaminError:
-                    pending.append({**item, "requires_refresh": True})
-                    continue
-                digest = proposal["payload_hash"]
-                outcome = recorded_outcome(decision_database, str(product.root), item["id"], digest)
-                if outcome in ("agreed", "rejected"):
-                    decided.append({**item, "outcome": outcome, "payload_hash": digest})
-                    continue
-            pending.append(item)
-        formal = pending
-    assumptions = (_assumptions(product, ledger) if decision_database is None else
-                   approvals.parse_assumptions(product.root))
-    for aid, item in assumptions.items():
-        proposal = {"id": aid, "kind": "assumption", "title": item["title"]}
-        digest = sha256_text(item["text"])
-        outcome = (recorded_outcome(decision_database, str(product.root), aid, digest)
-                   if decision_database is not None else None)
-        if outcome in ("agreed", "rejected"):
-            decided.append({**proposal, "outcome": outcome, "payload_hash": digest})
-        else:
-            formal.append(proposal)
+    for aid, item in _assumptions(product, ledger).items():
+        formal.append({"id": aid, "kind": "assumption", "title": item["title"]})
+    decided = [
+        {"id": item["id"], "kind": item["kind"], "outcome": item["status"]}
+        for item in ledger["requests"].values() if item.get("approver") == flow.HOST_APPROVER
+    ]
+    decided.extend(
+        {"id": aid, "kind": "assumption", "outcome": item["status"]}
+        for aid, item in ledger["assumptions"].items()
+        if item.get("approver") == flow.HOST_APPROVER
+    )
     handoff = cmds.latest_handoff(product)
     valid, problems = cmds.validate_handoff(read_text(handoff) or "") if handoff else (False, [])
     action = status["step"]
     if state["phase"] == 0 and not state.get("stack_approved"):
         if status["missing_intake"]:
             action = "Business records the missing intake answers. Save confirmed values with flamin_save_intake."
+        elif any(item["kind"] == "stack" for item in formal):
+            action = "Review the pending stack proposal and ask the human to confirm the decision."
         else:
-            action = "Architect records a stack recommendation. Formal stack approval must precede Phase 1."
+            action = "Architect records a stack recommendation, then open a proposal with flamin_propose_stack."
     return {
         **status,
         "next_action": action,
         "formal_decisions": sorted(formal, key=lambda req: req["id"]),
         "recorded_human_decisions": sorted(decided, key=lambda req: req["id"]),
-        "approval_blocker": (AUTHORITY_UNAVAILABLE if decision_database is None else
-            "The decision screen accepts assumptions and stack proposals. Workflow gates still require integration."),
         "latest_handoff": {"path": product.relpath(handoff), "valid": valid, "problems": problems} if handoff else None,
         "intake_revision": (flow.intake_revision(state) if state["phase"] == 0 and
                             not state.get("stack_approved") else None),
     }
 
 
-def review_decision(product: Product, rid: str, protected: bool = False) -> dict:
+def review_decision(product: Product, rid: str) -> dict:
     state, ledger = _read_state(product)
     if rid.startswith("A-"):
-        assumptions = approvals.parse_assumptions(product.root) if protected else _assumptions(product, ledger)
-        item = assumptions.get(rid)
+        item = _assumptions(product, ledger).get(rid)
         if item is None:
             raise FlaminError(f"No open assumption with ID {rid}.")
         kind, title, payload = "assumption", item["title"], item["text"]
@@ -159,14 +139,14 @@ def review_decision(product: Product, rid: str, protected: bool = False) -> dict
         kind, title, payload = req["kind"], req["title"], req["payload"]
         if sha256_text(payload) != req["payload_hash"]:
             raise FlaminError(f"The payload digest for {rid} does not match.")
-        if protected and kind == "stack":
+        if kind == "stack":
             flow.intake_revision(state)
             details = json.loads(payload)
             recommendation = read_text(product.fdir / "decisions" / "stack.md") or ""
             if sha256_text(recommendation) != details["recommendation_hash"]:
                 raise FlaminError("The stack recommendation changed. Submit a new proposal.")
             if details["profiles"] != req["data"]["profiles"] or len(details["profiles"]) != 1:
-                raise FlaminError("The protected desk accepts one shipped profile at the workspace root.")
+                raise FlaminError("This form accepts one shipped profile at the workspace root.")
             chosen = details["profiles"][0]
             name = chosen["name"]
             if (name not in kit_profiles() or chosen["root"] or chosen["new_profile"] or
@@ -181,7 +161,7 @@ def review_decision(product: Product, rid: str, protected: bool = False) -> dict
                                  indent=2, sort_keys=True)
     return {"workspace": str(product.root), "id": rid, "kind": kind, "title": title, "payload": payload,
             "payload_hash": sha256_text(payload), "state_revision": sha256_text(json.dumps(state, sort_keys=True)),
-            "approval_blocker": None if protected and kind in ("assumption", "stack") else AUTHORITY_UNAVAILABLE}
+            "confirmation_available": kind in FORM_KINDS}
 
 
 def rpc_error(request_id, code: int, message: str) -> dict:
@@ -197,12 +177,12 @@ def read_result(operation, product: Product, *args) -> dict:
         value = operation(product, *args)
     except FlaminError as exc:
         return tool_error(str(exc))
-    except (OSError, KeyError, TypeError, ValueError, AttributeError, sqlite3.Error):
+    except (OSError, KeyError, TypeError, ValueError, AttributeError):
         return tool_error("Workspace state could not be read. Check its format and permissions.")
     return {"structuredContent": value, "content": [{"type": "text", "text": json.dumps(value)}]}
 
 
-def dispatch(product: Product, request: object, decision_database: Path | None = None) -> dict | None:
+def dispatch(product: Product, request: object) -> dict | None:
     if not isinstance(request, dict) or request.get("jsonrpc") != "2.0" or not isinstance(request.get("method"), str):
         return rpc_error(None, -32600, "Invalid request")
     if "id" not in request:
@@ -228,10 +208,10 @@ def dispatch(product: Product, request: object, decision_database: Path | None =
         if name == STATUS_TOOL["name"] and args == {}:
             result = read_result(workspace_status, product)
         elif name == CONTINUE_TOOL["name"] and args == {}:
-            result = read_result(continue_workspace, product, decision_database)
+            result = read_result(continue_workspace, product)
         elif (name == REVIEW_TOOL["name"] and isinstance(args, dict) and set(args) == {"id"}
               and isinstance(args["id"], str)):
-            result = read_result(review_decision, product, args["id"], decision_database is not None)
+            result = read_result(review_decision, product, args["id"])
         else:
             return rpc_error(request_id, -32602, "Unknown read operation or invalid arguments")
     else:
