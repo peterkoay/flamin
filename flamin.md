@@ -4,11 +4,21 @@ Operator workflow and implementation contract. The development checkout implemen
 
 ## Codex Step 0 rehearsal
 
-The workspace-bound MCP server exposes status, continuation, review of formal proposals, and confirmed intake saving. Intake confirmation records answers only. Formal approval stays open until a protected human decision service is paired.
+The workspace-bound MCP server exposes status, continuation, review of formal proposals, and confirmed intake saving. Intake confirmation records answers only. With a paired decision database, the server can open a Step 0 proposal for a shipped stack and show the independently recorded outcomes.
 
 The copy-only migrator recognizes the installed v2 Codex layout before stack approval. Its preview binds the rehearsal to a source fingerprint. It publishes a separate copy only after checking the captured files, removing identified Codex hooks and validating state checksums. It preserves request payloads and marks obsolete Codex shell and edit requests superseded in the copy. It preserves Git metadata and the Git backstop. Customized rules, unknown hook wiring and outstanding formal requests require review before applying this rehearsal.
 
-Maintainers can preview or create the copy with `kit/engine/flamin_rehearse.py`. The source path is required. Creating a copy also requires `--copy-to` and the preview's `--expected-snapshot`. Pair the MCP server `kit/engine/flamin_intake_mcp.py` to the absolute path of the copy. Git snapshot checks use `kit/engine/flamin_verify_snapshot.py` from a trusted installation with a full trusted base commit ID. Its current policy accepts ordinary verified edits and requires separate trusted evidence for changes to engine records, the kit and generated structure. Required CI integration, approved regeneration, formal decisions and the full terminal-free workflow remain rollout gates.
+Maintainers can preview or create the copy with `kit/engine/flamin_rehearse.py`. The source path is required. Creating a copy also requires `--copy-to` and the preview's `--expected-snapshot`. Pair the MCP server `kit/engine/flamin_intake_mcp.py` to the absolute path of the copy.
+
+### Decision screen prototype
+
+The standalone `kit/engine/flamin_decision_screen.py` runs on loopback. It takes a protected JSON pairing file with an absolute `workspace`, fixed `port`, base64url `credential_id`, and base64url `public_key_spki` for a pre-enrolled ES256 WebAuthn credential for `localhost`. The trusted installer supplies the public credential through a separate enrollment ceremony and provides the Python `cryptography` dependency. The operator opens the local screen, reviews the full proposal and chooses approve or reject. Each choice requires a fresh assertion with user presence and verification.
+
+Install the engine, pairing file and adjacent SQLite database under an OS identity or ACL the agent cannot modify. Give the MCP process read access to the database and configure its path as the second argument after the workspace. The decision screen binds each challenge to the exact proposal, state revision and choice. Results are recorded separately from the legacy workspace approval ledger. Applying a recorded decision to the product workflow, graphical enrollment, and live Codex pairing are outstanding. Keep the legacy backstop in place during the rehearsal.
+
+### Snapshot verification
+
+Run `kit/engine/flamin_verify_snapshot.py` from a trusted installation with a full trusted base commit ID. Its current policy accepts ordinary verified edits and requires separate trusted evidence for changes to engine records, the kit and generated structure. `kit/ci/flamin-protected-snapshot.yml` is a reusable workflow template for a protected repository. The protected caller must supply the pull request base and head from the event and pin the verifier to a reviewed commit. Require that specific protected workflow through repository policy. The verification job reads candidate Git objects and executes the pinned verifier. Run candidate tests separately.
 
 ## What you do in chat
 

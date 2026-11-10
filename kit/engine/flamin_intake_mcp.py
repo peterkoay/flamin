@@ -9,9 +9,10 @@ from uuid import uuid4
 
 sys.dont_write_bytecode = True
 
-from flamin_status_mcp import READ_TOOLS, dispatch, rpc_error, tool_error  # noqa: E402
+from flamin_status_mcp import READ_TOOLS, dispatch, review_decision, rpc_error, tool_error  # noqa: E402
 from flaminlib import flow, phase  # noqa: E402
 from flaminlib.product import Product  # noqa: E402
+from flaminlib.profiles import kit_profiles  # noqa: E402
 from flaminlib.util import FlaminError  # noqa: E402
 
 INTAKE_FIELDS = dict(phase.MANDATORY)
@@ -34,6 +35,29 @@ INTAKE_TOOL = {
     "annotations": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
 }
 CONFIRMATION = {"confirmation": "Save intake"}
+STACK_TOOL = {
+    "name": "flamin_propose_stack",
+    "description": "Open a formal Step 0 proposal for a shipped stack profile. Does not decide or apply the stack.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"profile": {"type": "string", "enum": kit_profiles()},
+                       "expected_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+        "required": ["profile", "expected_revision"],
+        "additionalProperties": False,
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+}
+
+
+def propose_stack(product: Product, args: object) -> dict:
+    if (not isinstance(args, dict) or set(args) != {"profile", "expected_revision"} or
+            args["profile"] not in kit_profiles() or not isinstance(args["expected_revision"], str)):
+        raise FlaminError("Choose one shipped profile and supply the current intake revision.")
+    profile = args["profile"]
+    if (product.fdir / "decisions" / "proposed-stacks" / profile / "profile.json").exists():
+        raise FlaminError("A local proposal shadows this shipped profile.")
+    request, _ = flow.propose_stack(product, [profile], args["expected_revision"])
+    return review_decision(product, request["id"], protected=True)
 
 
 def prepare_intake(product: Product, args: object):
@@ -61,8 +85,9 @@ def reply(request_id, result: dict) -> dict:
 
 
 class IntakeSession:
-    def __init__(self, product: Product):
+    def __init__(self, product: Product, decision_database: Path | None = None):
         self.product = product
+        self.decision_database = decision_database
         self.supports_form = False
         self.pending = None
 
@@ -85,9 +110,19 @@ class IntakeSession:
                 not elicitation or isinstance(elicitation.get("form"), dict)
             )
         if method == "tools/list":
-            return reply(request_id, {"tools": [*READ_TOOLS, INTAKE_TOOL]})
+            stack_tools = [STACK_TOOL] if self.decision_database is not None else []
+            return reply(request_id, {"tools": [*READ_TOOLS, INTAKE_TOOL, *stack_tools]})
+        if method == "tools/call" and params.get("name") == STACK_TOOL["name"] and self.decision_database is not None:
+            try:
+                proposal = propose_stack(self.product, params.get("arguments"))
+            except FlaminError as exc:
+                return reply(request_id, tool_error(str(exc)))
+            except (OSError, ValueError, TypeError, KeyError):
+                return reply(request_id, tool_error("The stack proposal could not be prepared."))
+            return reply(request_id, {"structuredContent": proposal,
+                                      "content": [{"type": "text", "text": json.dumps(proposal)}]})
         if method != "tools/call" or params.get("name") != INTAKE_TOOL["name"]:
-            return dispatch(self.product, request)
+            return dispatch(self.product, request, self.decision_database)
         if not self.supports_form:
             return reply(request_id, tool_error("This host does not provide intake confirmation forms."))
         if self.pending is not None:
@@ -138,10 +173,17 @@ class IntakeSession:
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or not Path(sys.argv[1]).is_absolute() or not Path(sys.argv[1]).is_dir():
-        print("The FLAMIN intake pilot requires one existing, absolute workspace path.", file=sys.stderr)
+    if len(sys.argv) not in (2, 3) or not Path(sys.argv[1]).is_absolute() or not Path(sys.argv[1]).is_dir():
+        print("Supply an absolute workspace path and optionally a protected decision database.", file=sys.stderr)
         return 2
-    session = IntakeSession(Product(Path(sys.argv[1]).resolve(), tool="mcp"))
+    root = Path(sys.argv[1]).resolve()
+    database = Path(sys.argv[2]) if len(sys.argv) == 3 else None
+    if database is not None:
+        if not database.is_absolute() or database.resolve().is_relative_to(root):
+            print("The decision database must be an absolute path outside the paired workspace.", file=sys.stderr)
+            return 2
+        database = database.resolve()
+    session = IntakeSession(Product(root, tool="mcp"), database)
     for line in sys.stdin.buffer:
         try:
             request = json.loads(line.decode("utf-8"))

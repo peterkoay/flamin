@@ -1,0 +1,65 @@
+# Install in a protected workflow repository. Require this specific workflow via ruleset.
+# The protected caller supplies commits from the pull request event and a pinned verifier.
+name: FLAMIN snapshot integrity
+
+on:
+  workflow_call:
+    inputs:
+      base:
+        required: true
+        type: string
+      candidate:
+        required: true
+        type: string
+      candidate_ref:
+        required: true
+        type: string
+      verifier_repository:
+        required: true
+        type: string
+      verifier_commit:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate immutable identifiers
+        env:
+          FLAMIN_BASE: ${{ inputs.base }}
+          FLAMIN_CANDIDATE: ${{ inputs.candidate }}
+          FLAMIN_VERIFIER_COMMIT: ${{ inputs.verifier_commit }}
+          FLAMIN_CANDIDATE_REF: ${{ inputs.candidate_ref }}
+        run: |
+          [[ "$FLAMIN_BASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$FLAMIN_CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$FLAMIN_VERIFIER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$FLAMIN_CANDIDATE_REF" =~ ^refs/pull/[1-9][0-9]*/head$ ]]
+      - name: Obtain candidate Git objects
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.candidate_ref }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Obtain the pinned verifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ${{ inputs.verifier_repository }}
+          ref: ${{ inputs.verifier_commit }}
+          path: verifier
+          persist-credentials: false
+      - name: Verify snapshot with trusted code
+        env:
+          FLAMIN_BASE: ${{ inputs.base }}
+          FLAMIN_CANDIDATE: ${{ inputs.candidate }}
+          FLAMIN_VERIFIER_COMMIT: ${{ inputs.verifier_commit }}
+        run: |
+          [[ "$(git -C candidate rev-parse HEAD)" == "$FLAMIN_CANDIDATE" ]]
+          [[ "$(git -C verifier rev-parse HEAD)" == "$FLAMIN_VERIFIER_COMMIT" ]]
+          python3 -B -E -s verifier/kit/engine/flamin_verify_snapshot.py candidate "$FLAMIN_BASE" --candidate "$FLAMIN_CANDIDATE"

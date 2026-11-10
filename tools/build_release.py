@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXED_TIME = (2020, 1, 1, 0, 0, 0)
 INCLUDED_ROOT_FILES = {
     ".gitattributes", ".gitignore", "AGENTS.md", "CLAUDE.md",
-    "LICENSE", "README.md", "flamin", "flamin.cmd",
+    "LICENSE", "README.md", "flamin", "flamin.cmd", "flamin.md",
 }
 INCLUDED_DIRECTORIES = ("kit/", "docs/", ".claude/", ".codex/", ".cursor/")
 EXCLUDED_PATHS = {".cursor/hooks.json", ".claude/settings.local.json"}

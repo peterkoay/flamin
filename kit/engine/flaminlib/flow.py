@@ -101,16 +101,25 @@ def cmd_intake(p: Product, args) -> int:
 
 
 def _intake_stack(p: Product, args) -> int:
+    req, warn = propose_stack(p, args.stack)
+    for w in warn:
+        out("NOTE: " + w)
+    out(ap.format_request(req))
+    return 0
+
+
+def propose_stack(p: Product, selection: list[str], expected_revision: str | None = None) -> tuple[dict, list[str]]:
     state = p.state()
     miss = missing_intake(state)
     if miss:
         raise FlaminError("Stack approval refused: intake is not complete. Missing: " + "; ".join(miss))
     rec = p.fdir / "decisions" / "stack.md"
-    if not (read_text(rec) or "").strip():
+    recommendation = read_text(rec) or ""
+    if not recommendation.strip():
         raise FlaminError("Stack approval refused: the Architect's recommendation is not recorded in "
                           ".flamin/decisions/stack.md (plain-words reasons first).")
     chosen = []
-    for item in args.stack:
+    for item in selection:
         name, _, root = item.partition(":")
         root = root.strip().strip("/")
         root = root + "/" if root else ""
@@ -135,20 +144,23 @@ def _intake_stack(p: Product, args) -> int:
     if "ios" in platforms:
         warn.append("iOS is a target: iOS builds need macOS with Xcode, or a cloud build service "
                     "(a cloud build service is its own Approval Gate item).")
-    payload = _dump({"profiles": chosen, "recommendation_hash": sha256_text(read_text(rec) or ""),
+    recommendation_hash = sha256_text(recommendation)
+    payload = _dump({"profiles": chosen, "recommendation_hash": recommendation_hash,
                      "warnings": warn})
     names = ", ".join(c["name"] + (f" at {c['root']}" if c["root"] else "") for c in chosen)
     with p.tx() as (state, appr):
+        if expected_revision is not None and (p.store.checksum_problems() or
+                intake_revision(state) != expected_revision):
+            raise FlaminError("Workspace state changed. Review the stack proposal again.")
+        if sha256_text(read_text(rec) or "") != recommendation_hash:
+            raise FlaminError("The stack recommendation changed. Review it again.")
         req = ap.open_request(p.store, state, appr, "stack", f"Stack choice: {names}", payload,
                               preview(f"use stack profile(s) {names} for {state.get('product')}",
                                       "engine writes stack.json and copies the profile(s) into .flamin/stacks/",
                                       "Step 0 stack approval is an Approval Gate item (DESIGN §8.2)"),
                               data={"profiles": chosen})
     p.log("gate-request", target=req["id"], decision="ask", reason=req["title"])
-    for w in warn:
-        out("NOTE: " + w)
-    out(ap.format_request(req))
-    return 0
+    return req, warn
 
 
 def _apply_stack(p: Product, state, req) -> str:
