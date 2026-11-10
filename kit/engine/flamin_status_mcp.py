@@ -11,6 +11,7 @@ sys.dont_write_bytecode = True
 from flaminlib import approvals, cmds, flow, phase  # noqa: E402
 from flaminlib.product import Product, kit_version  # noqa: E402
 from flaminlib.profiles import kit_profile, kit_profiles  # noqa: E402
+from flaminlib.snapshot import COMMIT_ID, verify_snapshot  # noqa: E402
 from flaminlib.util import FlaminError, read_text, sha256_text  # noqa: E402
 
 STATUS_TOOL = {
@@ -35,8 +36,20 @@ REVIEW_TOOL = {
     },
     "annotations": {"readOnlyHint": True, "openWorldHint": False},
 }
-READ_TOOLS = [STATUS_TOOL, CONTINUE_TOOL, REVIEW_TOOL]
-FORM_KINDS = {"assumption", "stack"}
+VERIFY_TOOL = {
+    "name": "flamin_verify_snapshot",
+    "description": "Verify the staged tree or a candidate commit against a trusted base commit.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {key: {"type": "string", "pattern": f"^(?:{COMMIT_ID.pattern})$"}
+                       for key in ("base", "candidate")},
+        "required": ["base"],
+        "additionalProperties": False,
+    },
+    "annotations": {"readOnlyHint": True, "openWorldHint": False},
+}
+READ_TOOLS = [STATUS_TOOL, CONTINUE_TOOL, REVIEW_TOOL, VERIFY_TOOL]
+FORM_KINDS = {"assumption", "stack", "baseline", "baseline-amend", "plan", "cr-list", "release"}
 
 
 def _read_state(product: Product) -> tuple[dict, dict]:
@@ -69,6 +82,11 @@ def _workspace_status(state: dict, ledger: dict) -> dict:
         for request in ledger["requests"].values()
         if request["status"] in ("pending", "asked")
     ]
+    roles = phase.allowed_agents(state)
+    if state["phase"] == 0 and state.get("stack_approved"):
+        roles = {"business", "analyst"}
+    elif _ready_for_integration(state):
+        roles = {"tester"}
     return {
         "initialized": True,
         "kit_version": state.get("kit_version"),
@@ -76,11 +94,18 @@ def _workspace_status(state: dict, ledger: dict) -> dict:
         "version": state["version"],
         "phase": state["phase"],
         "step": phase.current_step(state),
-        "eligible_roles": sorted(phase.allowed_agents(state)),
+        "eligible_roles": sorted(roles),
         "missing_intake": phase.missing_intake(state) if state["phase"] == 0 else [],
         "pending_requests": sorted(pending, key=lambda request: request["id"]),
         "recorded_open_assumptions": approvals.open_assumptions(ledger),
     }
+
+
+def _ready_for_integration(state: dict) -> bool:
+    return (state["phase"] == 2 and phase.version_info(state).get("cr_list_approved")
+            and bool(state["modules"]) and all(
+                module.get("self_test") == "pass" and 10 in module["steps_done"]
+                for module in state["modules"].values()))
 
 
 def continue_workspace(product: Product) -> dict:
@@ -92,6 +117,7 @@ def continue_workspace(product: Product) -> dict:
         {"id": req["id"], "kind": req["kind"], "title": req["title"]}
         for req in ledger["requests"].values()
         if req["status"] in ("pending", "asked") and req["kind"] != "action"
+        and not (req["kind"] == "baseline" and state["baseline"].get("confirmed"))
     ]
     for aid, item in _assumptions(product, ledger).items():
         formal.append({"id": aid, "kind": "assumption", "title": item["title"]})
@@ -114,6 +140,10 @@ def continue_workspace(product: Product) -> dict:
             action = "Review the pending stack proposal and ask the human to confirm the decision."
         else:
             action = "Architect records a stack recommendation, then open a proposal with flamin_propose_stack."
+    elif any(item["kind"] == "release" for item in formal):
+        action = "Review the release proposal and ask the human to confirm the decision."
+    elif _ready_for_integration(state):
+        action = "Run integration tests and record the Step 11 result with flamin_record_integration_test."
     return {
         **status,
         "next_action": action,
@@ -127,6 +157,8 @@ def continue_workspace(product: Product) -> dict:
 
 def review_decision(product: Product, rid: str) -> dict:
     state, ledger = _read_state(product)
+    effect = ""
+    request_data = {}
     if rid.startswith("A-"):
         item = _assumptions(product, ledger).get(rid)
         if item is None:
@@ -137,6 +169,8 @@ def review_decision(product: Product, rid: str) -> dict:
         if req is None or req["kind"] == "action" or req["status"] not in ("pending", "asked"):
             raise FlaminError(f"No open formal proposal with ID {rid}.")
         kind, title, payload = req["kind"], req["title"], req["payload"]
+        request_data = req.get("data", {})
+        effect = "\n".join(req.get("preview", [])[1:2])
         if sha256_text(payload) != req["payload_hash"]:
             raise FlaminError(f"The payload digest for {rid} does not match.")
         if kind == "stack":
@@ -159,9 +193,37 @@ def review_decision(product: Product, rid: str) -> dict:
                 raise FlaminError("The proposed profile cannot be verified against the installed kit.")
             payload = json.dumps({**details, "recommendation": recommendation, "intake": state["intake"]},
                                  indent=2, sort_keys=True)
+        elif kind == "baseline":
+            if state["baseline"].get("confirmed"):
+                raise FlaminError("The baseline is already confirmed.")
+            details = json.loads(payload)
+            modules = product.modules()
+            if modules != details["modules"] or flow._model_hashes(product, modules) != details["models"]:
+                raise FlaminError("The baseline changed. Submit a new proposal.")
+            payload = json.dumps({**details, "data_models": {
+                module: read_text(product.fdir / "design" / module / "model.toml") for module in modules
+            }}, indent=2, sort_keys=True)
+        elif kind == "plan":
+            module = flow._need_phase2(state, request_data["module"])
+            if 6 in module["steps_done"]:
+                raise FlaminError("The module plan is already confirmed.")
+            plan = product.fdir / "analysis" / request_data["slug"] / "plan.md"
+            if read_text(plan) != json.loads(payload)["plan"]:
+                raise FlaminError("The plan changed. Submit a new proposal.")
+        elif kind == "cr-list":
+            details = json.loads(payload)
+            fields = ("id", "title", "modules", "from_step")
+            current = [{key: item[key] for key in fields} for item in state["crs"]
+                       if item["version"] == details["version"]]
+            if (details["version"] != state["version"] or current != details["crs"]
+                    or phase.version_info(state).get("cr_list_approved")):
+                raise FlaminError("The change list changed. Submit a new proposal.")
+        elif kind == "release":
+            if request_data["version"] != state["version"] or state["phase3"]["architecture_review"] != "pass":
+                raise FlaminError("The release is no longer at the reviewed step.")
     return {"workspace": str(product.root), "id": rid, "kind": kind, "title": title, "payload": payload,
             "payload_hash": sha256_text(payload), "state_revision": sha256_text(json.dumps(state, sort_keys=True)),
-            "confirmation_available": kind in FORM_KINDS}
+            "confirmation_available": kind in FORM_KINDS, "effect": effect, "request_data": request_data}
 
 
 def rpc_error(request_id, code: int, message: str) -> dict:
@@ -212,6 +274,10 @@ def dispatch(product: Product, request: object) -> dict | None:
         elif (name == REVIEW_TOOL["name"] and isinstance(args, dict) and set(args) == {"id"}
               and isinstance(args["id"], str)):
             result = read_result(review_decision, product, args["id"])
+        elif (name == VERIFY_TOOL["name"] and isinstance(args, dict) and "base" in args
+              and set(args) <= {"base", "candidate"} and all(isinstance(value, str) for value in args.values())):
+            result = read_result(lambda paired: verify_snapshot(paired.root, args["base"], args.get("candidate")),
+                                 product)
         else:
             return rpc_error(request_id, -32602, "Unknown read operation or invalid arguments")
     else:

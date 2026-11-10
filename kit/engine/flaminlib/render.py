@@ -112,7 +112,7 @@ def codex_prompt(name: str) -> str:
 
 
 def codex_rehearsal() -> dict[str, str]:
-    """Render the limited Step 0 adapter without changing the legacy renderer."""
+    """Render the Codex MCP rules without changing the legacy renderer."""
     rules = (KIT_DIR / "rules" / "codex-rehearsal.md").read_text(encoding="utf-8")
     business_path = ".codex/agents/business.toml"
     header = codex_shared()[business_path].split("developer_instructions = ", 1)[0]

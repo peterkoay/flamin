@@ -373,6 +373,8 @@ def _apply_baseline(p: Product, state, req) -> str:
     mods = p.modules()
     if mods != data["modules"]:
         raise FlaminError("modules.json changed after the baseline request. Run `flamin baseline-review` again.")
+    if _model_hashes(p, mods) != data["models"]:
+        raise FlaminError("A data model changed after the baseline request. Submit a new baseline proposal.")
     state["baseline"].update({"confirmed": True, "at": iso(), "models": data["models"]})
     if 5 not in state["phase1"]["steps_done"]:
         state["phase1"]["steps_done"].append(5)

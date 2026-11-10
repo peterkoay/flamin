@@ -1,4 +1,4 @@
-"""Workspace MCP server for human-confirmed intake and Step 0 decisions."""
+"""Workspace MCP server for the FLAMIN product workflow."""
 
 from __future__ import annotations
 
@@ -11,12 +11,21 @@ from uuid import uuid4
 sys.dont_write_bytecode = True
 
 from flamin_status_mcp import READ_TOOLS, dispatch, review_decision, rpc_error, tool_error  # noqa: E402
+from flamin_workflow_mcp import (  # noqa: E402
+    OPERATIONS, check_new_workspace, initialize_workspace, run_workflow, workflow_tools,
+)
 from flaminlib import flow, phase  # noqa: E402
 from flaminlib.product import Product  # noqa: E402
 from flaminlib.profiles import kit_profiles  # noqa: E402
 from flaminlib.util import FlaminError  # noqa: E402
 
 INTAKE_FIELDS = dict(phase.MANDATORY)
+INIT_TOOL = {
+    "name": "flamin_initialize",
+    "description": "Ask the human to initialize a new product in the paired FLAMIN kit folder.",
+    "inputSchema": {"type": "object", "additionalProperties": False},
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+}
 INTAKE_TOOL = {
     "name": "flamin_save_intake",
     "description": "Show proposed Step 0 answers to the user and save only after they confirm in the form.",
@@ -37,7 +46,7 @@ INTAKE_TOOL = {
 }
 DECISION_TOOL = {
     "name": "flamin_confirm_decision",
-    "description": "Ask the human to confirm an assumption or stack decision in the host form.",
+    "description": "Ask the human to approve or reject a workflow proposal in the host form.",
     "inputSchema": {
         "type": "object",
         "properties": {"id": {"type": "string"}, "decision": {"enum": ["approve", "reject"]}},
@@ -109,9 +118,7 @@ def prepare_decision(product, args):
         raise FlaminError("This proposal type does not use the confirmation form yet.")
     choice = args["decision"]
     phrase = f"{choice.capitalize()} {proposal['id']}"
-    effect = ""
-    if proposal["kind"] == "stack" and choice == "approve":
-        effect = "\n\nApproval records the chosen stack, installs its profile and makes Step 1 ready."
+    effect = "\n\n" + proposal["effect"] if choice == "approve" and proposal.get("effect") else ""
     message = (
         f"{phrase}: {proposal['title']}\nWorkspace: {proposal['workspace']}\n\n{proposal['payload']}"
         f"{effect}\n\nTo confirm, type {phrase} and accept. Otherwise decline or cancel."
@@ -162,9 +169,21 @@ class IntakeSession:
                 not elicitation or isinstance(elicitation.get("form"), dict)
             )
         if method == "tools/list":
-            return reply(request_id, {"tools": [*READ_TOOLS, INTAKE_TOOL, STACK_TOOL, DECISION_TOOL]})
+            return reply(request_id, {"tools": [
+                *READ_TOOLS, INIT_TOOL, INTAKE_TOOL, STACK_TOOL, DECISION_TOOL, *workflow_tools(),
+            ]})
         name = params.get("name")
-        if method != "tools/call" or name not in (INTAKE_TOOL["name"], STACK_TOOL["name"], DECISION_TOOL["name"]):
+        if method == "tools/call" and isinstance(name, str) and name in OPERATIONS:
+            try:
+                result = run_workflow(self.product, name, params.get("arguments", {}))
+                return reply(request_id, success(result) if result["ok"] else tool_error(result["message"]))
+            except FlaminError as exc:
+                return reply(request_id, tool_error(str(exc)))
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                return reply(request_id, tool_error(f"Could not complete the workflow operation: {exc}"))
+        if method != "tools/call" or name not in (
+            INIT_TOOL["name"], INTAKE_TOOL["name"], STACK_TOOL["name"], DECISION_TOOL["name"],
+        ):
             return dispatch(self.product, request)
         try:
             args = params.get("arguments")
@@ -176,6 +195,14 @@ class IntakeSession:
                 raise FlaminError("Finish the outstanding confirmation first.")
             if name == DECISION_TOOL["name"]:
                 phrase, preview, apply = prepare_decision(self.product, args)
+            elif name == INIT_TOOL["name"]:
+                if args not in (None, {}):
+                    raise FlaminError("Initialize takes no arguments.")
+                check_new_workspace(self.product)
+                phrase = "Initialize workspace"
+                preview = (f"Create the initial FLAMIN state and intake documents in {self.product.root}.\n\n"
+                           f"To confirm, type {phrase} and accept.")
+                apply = partial(initialize_workspace, self.product)
             else:
                 answers, revision, preview = prepare_intake(self.product, args)
                 phrase, apply = "Save intake", partial(complete_intake, self.product, answers, revision)

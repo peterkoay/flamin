@@ -126,3 +126,81 @@ class IntakeMcpTests(Project):
         status = self.send("tools/call", {"name": "flamin_continue"})["result"]["structuredContent"]
         self.assertEqual(status["step"], "Step 1 ready")
         self.assertEqual(status["recorded_human_decisions"], [{"id": rid, "kind": "stack", "outcome": "approved"}])
+
+class WorkflowMcpTests(Project):
+    def test_later_steps_use_the_engine_and_human_decisions(self):
+        from helpers import INTAKE, MODEL, WRITE_SPEC
+
+        product = Product(self.root, tool="mcp")
+        session = IntakeSession(product)
+        session.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"capabilities": {"elicitation": {}}}})
+
+        def send(name, **args):
+            return session.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                   "params": {"name": "flamin_" + name, "arguments": args}})
+
+        def call(name, **args):
+            return send(name, **args)["result"]
+
+        def run(name, **args):
+            result = call(name, **args)
+            self.assertFalse(result.get("isError"), result)
+            return result["structuredContent"]
+
+        def confirm(prompt, phrase):
+            self.assertEqual(prompt.get("method"), "elicitation/create", prompt)
+            answer = session.handle({"jsonrpc": "2.0", "id": prompt["id"], "result": {
+                "action": "accept", "content": {"confirmation": phrase},
+            }})["result"]
+            self.assertFalse(answer.get("isError"), answer)
+
+        def approve(expected_text):
+            rid = self.last_request()
+            prompt = send("confirm_decision", id=rid, decision="approve")
+            self.assertIn(expected_text, prompt["params"]["message"])
+            confirm(prompt, "Approve " + rid)
+
+        confirm(send("initialize"), "Initialize workspace")
+        self.assertFalse((self.root / ".git" / "hooks" / "pre-commit").exists())
+        confirm(send("save_intake", answers=dict(item.split("=", 1) for item in INTAKE)), "Save intake")
+        self.write(".flamin/decisions/stack.md", "Use python-fastapi for the example.")
+        run("propose_stack", profile="python-fastapi", expected_revision=run("continue")["intake_revision"])
+        approve("Use python-fastapi")
+
+        self.assertTrue(call("record_analysis", slug="../member")["isError"])
+        self.assertTrue(call("record_integration_test", result="pass")["isError"])
+        self.write(".flamin/analysis/member/requirements.md", "R1 register.\n")
+        run("record_analysis", slug="member")
+        run("add_module", add_module="member")
+        run("complete_model_step", step=2)
+        self.write(".flamin/design/member/model.toml", MODEL)
+        run("complete_model_step", step=3)
+        run("complete_model_step", step=4)
+        run("propose_baseline")
+        stale = self.last_request()
+        self.write(".flamin/design/member/model.toml", MODEL + "\n# Reviewed update\n")
+        self.assertTrue(call("review_decision", id=stale)["isError"])
+        run("propose_baseline")
+        approve("Reviewed update")
+        self.write(".flamin/analysis/member/plan.md", "## Batch 1\n- POST /api/member/register\n")
+        run("propose_plan", module="member")
+        approve("POST /api/member/register")
+        self.write(".flamin/design/member/register.toml", WRITE_SPEC)
+        run("record_design", module="member", spec="register")
+        run("generate", module="member", spec="register")
+        run("lease_module", module="member")
+        run("complete_development", module="member")
+        run("record_wiring", module="member", done=True)
+        run("record_module_test", module="member", result="pass")
+        self.assertIn("Step 11", run("continue")["next_action"])
+        run("record_integration_test", result="pass")
+        run("review_architecture")
+        run("propose_release")
+        self.assertIsNone(self.state()["versions"]["1"]["released"])
+        approve("machine_version")
+        self.assertTrue(self.state()["versions"]["1"]["released"])
+        run("raise_change_request", title="Improve registration")
+        run("propose_change_list", version=2, cr=["CR-001=member@8"])
+        approve("Improve registration")
+        self.assertEqual(self.state()["modules"]["member"]["steps_done"], [6, 7])

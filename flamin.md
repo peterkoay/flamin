@@ -1,22 +1,24 @@
 # FLAMIN v4 without a terminal
 
-Operator workflow and implementation contract. The development checkout implements a Codex Step 0 rehearsal. The tables below describe the target workflow.
+Operator workflow and implementation contract. The development checkout supports the product workflow in Codex from intake through the local release decision. The setup and rollout sections include planned work.
 
-## Codex Step 0 rehearsal
+## Codex workflow
 
-The workspace-bound MCP server exposes status, continuation, review of formal proposals, and confirmed intake saving. The server can open a Step 0 proposal for a shipped stack and show the recorded outcomes.
+The workspace-bound MCP server exposes status, continuation, review of formal proposals, and confirmed intake saving. Use the tool for each workflow step after its artifacts are ready. The server records requirements, models, plans, designs, generation, development, wiring, test results, architecture checks and change requests.
 
 The copy-only migrator recognizes the installed v2 Codex layout before stack approval. Its preview binds the rehearsal to a source fingerprint. It publishes a separate copy only after checking the captured files, removing identified Codex hooks and validating state checksums. It preserves request payloads and marks obsolete Codex shell and edit requests superseded in the copy. It preserves Git metadata and the Git backstop. Customized rules, unknown hook wiring and outstanding formal requests require review before applying this rehearsal.
 
 Maintainers can preview or create the copy with `kit/engine/flamin_rehearse.py`. The source path is required. Creating a copy also requires `--copy-to` and the preview's `--expected-snapshot`. Pair the MCP server `kit/engine/flamin_intake_mcp.py` to the absolute path of the copy.
 
+For a fresh product folder containing the kit, pair the same server and use `flamin_initialize` to confirm creation of the engine state and intake documents. The initializer writes product state and leaves host configuration to the pairing step.
+
 ### Human confirmation
 
-Use `flamin_confirm_decision` for an assumption or shipped stack proposal. The host shows the proposal and the human confirms the choice. FLAMIN checks the reviewed scope again and applies the outcome through the existing workspace engine. A confirmed stack approval makes Step 1 ready.
+Use `flamin_confirm_decision` for assumptions, shipped stack proposals, baselines, baseline amendments, plans, release proposals and change lists. The host shows the proposal and the human confirms the choice. FLAMIN checks the reviewed scope again and applies the outcome through the existing workspace engine. A confirmed stack approval makes Step 1 ready.
 
 ### Snapshot verification
 
-Run `kit/engine/flamin_verify_snapshot.py` from a trusted installation with a full trusted base commit ID. Its current policy accepts ordinary verified edits and requires separate trusted evidence for changes to engine records, the kit and generated structure. `kit/ci/flamin-protected-snapshot.yml` is a reusable workflow template for a protected repository. The protected caller must supply the pull request base and head from the event and pin the verifier to a reviewed commit. Require that specific protected workflow through repository policy. The verification job reads candidate Git objects and executes the pinned verifier. Run candidate tests separately.
+Use `flamin_verify_snapshot` in Codex or run `kit/engine/flamin_verify_snapshot.py` in CI. Both take a full trusted base commit ID. Its current policy accepts ordinary verified edits and requires separate trusted evidence for changes to engine records, the kit and generated structure. `kit/ci/flamin-protected-snapshot.yml` is a reusable workflow template for a protected repository. The protected caller must supply the pull request base and head from the event and pin the verifier to a reviewed commit. Require that specific protected workflow through repository policy. The verification job reads candidate Git objects and executes the pinned verifier. Run candidate tests separately.
 
 ## What you do in chat
 
