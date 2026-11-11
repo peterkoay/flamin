@@ -109,7 +109,7 @@ python -B -m unittest discover -s kit/engine/tests -t kit/engine/tests
 
 ## Continuous integration
 
-`kit/ci/flamin-check.yml` is a sample GitHub Actions workflow. Copy it to `.github/workflows/` in a product. It runs the engine tests and `flamin check-staged --range <base>..<head>` on Linux, macOS and Windows runners.
+`kit/ci/flamin-check.yml` is an optional GitHub Actions workflow for a shared product repository. Once the FLAMIN v4 verifier is on the base branch, copy the file to `.github/workflows/flamin-check.yml`. The job checks the proposed merge with the base branch's snapshot verifier.
 
 ## Maintaining the master kit (D-46)
 

@@ -18,7 +18,9 @@ Use `flamin_confirm_decision` for assumptions, shipped stack proposals, baseline
 
 ### Snapshot verification
 
-Use `flamin_verify_snapshot` in Codex or run `kit/engine/flamin_verify_snapshot.py` in CI. Both take a full trusted base commit ID. Its current policy accepts ordinary verified edits and requires separate trusted evidence for changes to engine records, the kit and generated structure. `kit/ci/flamin-protected-snapshot.yml` is a reusable workflow template for a protected repository. The protected caller must supply the pull request base and head from the event and pin the verifier to a reviewed commit. Require that specific protected workflow through repository policy. The verification job reads candidate Git objects and executes the pinned verifier. Run candidate tests separately.
+Use `flamin_verify_snapshot` in Codex or run `kit/engine/flamin_verify_snapshot.py` in CI. Both take a full trusted base commit ID. The verifier accepts ordinary edits that pass its checks and flags changes to engine records, the kit, and generated structure for separate review.
+
+For a shared GitHub product repository, first put the FLAMIN v4 verifier on the base branch. Copy `kit/ci/flamin-check.yml` to `.github/workflows/flamin-check.yml`. It runs one job per pull request and checks the proposed merge against its base using the verifier from the base commit. After the first successful run, the repository owner can require the **FLAMIN snapshot** check before merge. Review workflow changes as part of the pull request. Repositories that enforce verification through a centrally managed workflow can use `kit/ci/flamin-protected-snapshot.yml`.
 
 ## What you do in chat
 

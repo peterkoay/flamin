@@ -1,38 +1,33 @@
-# Sample CI workflow (GitHub Actions). Copy it to .github/workflows/flamin-check.yml in a product.
-# It runs the same backstop checks as the pre-commit hook on each pull request, on Linux, macOS and
-# Windows runners. CI has no staged diff, so it checks the pull request's commits with --range (D-35).
-name: flamin check
+# Copy to .github/workflows/flamin-check.yml in a shared product repository.
+# Install the FLAMIN v4 verifier on the base branch before enabling this check.
+name: FLAMIN verification
+
 on:
   pull_request:
-  push:
-    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
-  flamin:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.11", "3.13"]
-    runs-on: ${{ matrix.os }}
+  snapshot:
+    name: FLAMIN snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the proposed merge
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          path: candidate
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+          persist-credentials: false
+      - name: Check out the base verifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          python-version: ${{ matrix.python }}
-      - name: Engine unit tests
-        run: python -B -m unittest discover -s kit/engine/tests -t kit/engine -v
-      - name: Kit integrity and machine check
-        shell: bash
-        run: python kit/engine/flamin.py doctor || true
-      - name: Backstop checks on the pull request's commits
-        shell: bash
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: verifier
+          persist-credentials: false
+      - name: Check changed files
+        env:
+          FLAMIN_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
-          else
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
-          fi
-          python kit/engine/flamin.py check-staged --range "$RANGE"
+          python3 -B -E -s verifier/kit/engine/flamin_verify_snapshot.py candidate "$FLAMIN_BASE" --candidate "$GITHUB_SHA"
