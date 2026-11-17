@@ -28,7 +28,7 @@ jobs:
           from pathlib import Path
           assert Path('kit/VERSION').read_text(encoding='utf-8').strip() == os.environ['GITHUB_REF_NAME']
       - name: Engine tests
-        run: python -B -m unittest discover -s kit/engine/tests -t kit/engine -v
+        run: python -B -m unittest discover -s kit/engine/tests -t kit/engine/tests -v
       - name: Release archive tests
         run: python -B -m unittest discover -s tests -t . -v
       - name: Build and verify master kit
