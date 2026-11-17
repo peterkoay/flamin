@@ -1,7 +1,7 @@
 # flamin kit manifest: sha256 of each kit file (line endings normalised to LF). Written by `flamin doctor --kit --update-manifest` or `flamin upgrade`.
 7c74de6deed35667ce3816335a97979370c5a5e3f2d64bc5ad4aafbe8e751e78  flamin
 20410edac7c36f81c1f8de6b69afc3e665b33deb5e422d6815d54946b123a1af  flamin.cmd
-81db67b6a5702b9b68f0016f061c409bf3fb16d062fc854d1b424bb4e9c28c56  kit/VERSION
+e37ea1753db1b5df392e1cd344303873a97bc863d7371ad5f388e01ec5071e6a  kit/VERSION
 91341a8649903e5508170459d09c64fabe8ed66ab3e4f8602496740f28d05ed8  kit/adapters/claude/CLAUDE.header.md
 361981d36895008c90d3fe91af7178ffbc6be00993debd083776fc8041a0dd6a  kit/adapters/claude/README.md
 aaddba1d0d9e4b2550490cc9f3953cfefa0ecf304591fe7b272f81b31599467f  kit/adapters/codex/AGENTS.header.md

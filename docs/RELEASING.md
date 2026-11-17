@@ -1,8 +1,8 @@
 # Publishing the master kit
 
-The current kit version is `v1` in `kit/VERSION`. Its GitHub tag and Release use `v1`; the matching GitHub npm registry package is `@peterkoay/flamin@1.0.0`. This is the master-kit version, separate from versions of products made with the kit.
+The current kit version is `v4` in `kit/VERSION`. The GitHub tag and release use `v4`, and the matching GitHub npm registry package is `@peterkoay/flamin@4.0.0`. This is the master-kit version, separate from versions of products made with the kit.
 
-The recommended download is the full-kit ZIP or tar.gz from GitHub Releases. Both extract to `flamin-v1/`, ready to keep as a master kit. The npm package contains the same files under npm's `package/` root and has no runtime npm dependencies. Python 3.11 or newer remains required. npm does not turn `flamin` into a JavaScript command or install Python.
+The recommended download is the full-kit ZIP or tar.gz from GitHub Releases. Both extract to `flamin-v4/`, ready to keep as a master kit. The npm package contains the same files under npm's `package/` root and has no runtime npm dependencies. Python 3.11 or newer remains required. npm does not turn `flamin` into a JavaScript command or install Python.
 
 ## Local release candidate
 
@@ -15,17 +15,17 @@ python -B -m unittest discover -s tests -t . -v
 python -B tools/build_release.py --output-dir dist
 ```
 
-On Linux or macOS, use `./flamin kit-maintenance test`. The builder checks `kit/MANIFEST` against every tracked kit file and launcher before writing `dist/flamin-v1.zip`, `dist/flamin-v1.tar.gz`, `dist/flamin-v1-npm.tgz`, and `dist/flamin-v1-SHA256SUMS.txt`. File order, timestamps, owners, and modes are fixed so identical source files yield identical archive bytes. It packages tracked files only, and explicitly excludes the machine-local Cursor hook; local product state, maintenance flags, ignored secrets, untracked adapters and caches cannot enter the archive. Do not commit `dist/`.
+On Linux or macOS, use `./flamin kit-maintenance test`. The builder checks `kit/MANIFEST` against every tracked kit file and launcher before writing `dist/flamin-v4.zip`, `dist/flamin-v4.tar.gz`, `dist/flamin-v4-npm.tgz`, and `dist/flamin-v4-SHA256SUMS.txt`. File order, timestamps, owners, and modes are fixed so identical source files yield identical archive bytes. It packages tracked files only, and explicitly excludes the machine-local Cursor hook; local product state, maintenance flags, ignored secrets, untracked adapters and caches cannot enter the archive. Do not commit `dist/`.
 
-When npm is installed, `npm pack --dry-run --offline --ignore-scripts dist/flamin-v1-npm.tgz` inspects the file list without publishing. `docs/RELEASE_NOTES_v1.md` supplies the GitHub Release text.
+When npm is installed, `npm pack --dry-run --offline --ignore-scripts dist/flamin-v4-npm.tgz` inspects the file list without publishing. `docs/RELEASE_NOTES_v4.md` supplies the GitHub Release text.
 
 ## Publication procedure
 
-Review the release candidate, make a clean commit, and end maintenance mode in a human terminal. Publishing is a release gate. After explicit human approval for the exact `v1` release and package, a maintainer runs:
+Review the release candidate, make a clean commit, and end maintenance mode in a human terminal. Publishing is a release gate. After explicit human approval for the `v4` release and package, a maintainer runs these commands.
 
 ```text
-git tag -a v1 -m "Flamin v1"
-git push origin v1
+git tag -a v4 -m "Flamin v4"
+git push origin v4
 ```
 
 The tag-triggered [release workflow](../.github/workflows/release.yml) checks that the tag matches `kit/VERSION`, runs the engine and distribution tests on Python 3.11 and 3.13 across Linux, macOS, and Windows, then builds the archives. Only the final publish job has `contents: write` and `packages: write`. It creates the GitHub Release, attaches the ZIP, tar.gz, npm tarball and checksum file, and publishes the tarball to GitHub's npm registry. The workflow uses its repository `GITHUB_TOKEN`; no token is placed in source or a command line. Repository Actions settings must permit this token to publish releases and packages.
