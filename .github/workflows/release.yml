@@ -54,9 +54,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" dist/* --verify-tag --title "Flamin $TAG" --notes-file "docs/RELEASE_NOTES_${TAG}.md"
+        run: gh release view "$TAG" || gh release create "$TAG" dist/* --verify-tag --title "Flamin $TAG" --notes-file "docs/RELEASE_NOTES_${TAG}.md"
       - name: Publish GitHub npm package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: npm publish "dist/flamin-${TAG}-npm.tgz" --registry=https://npm.pkg.github.com
+        run: npm publish "./dist/flamin-${TAG}-npm.tgz" --registry=https://npm.pkg.github.com
